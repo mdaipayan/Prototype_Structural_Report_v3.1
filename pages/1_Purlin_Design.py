@@ -38,7 +38,7 @@ with col3:
     l1 = st.number_input("Lip L1 (mm)", value=20.0)
     l2 = st.number_input("Lip L2 (mm)", value=20.0)
 
-inp = LoadInputs(span_m, bay, spacing, slope_x, slope_y, dl, cl, ll, wl, cp, fy)
+inp = LoadInputs(span, bay, spacing, slope_x, slope_y, dl, cl, ll, wl, cp, fy)
 sec = ZSectionInputs(t, D, b1, b2, l1, l2)
 loads = purlin_loads(inp)
 moments = purlin_moments(inp, coeff)
