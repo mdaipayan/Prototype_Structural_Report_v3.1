@@ -10,13 +10,16 @@ Units used unless noted otherwise:
 - Thickness/dimensions: mm
 - Stresses: N/mm² or kg/cm² where noted
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
 from math import sqrt
-from typing import Dict, Any
+from typing import Any, Dict
 
 E_STEEL_N_PER_MM2 = 205000.0
+MPA_TO_KG_PER_CM2 = 10.1972
+KG_PER_CM2_TO_N_PER_MM2 = 0.0980665
 
 
 @dataclass
@@ -63,8 +66,13 @@ def roof_slope_factors(x: float, y: float) -> Dict[str, float]:
 
 def purlin_loads(inp: LoadInputs) -> Dict[str, Any]:
     f = roof_slope_factors(inp.roof_slope_x, inp.roof_slope_y)
-    w_gravity = (inp.dead_load_kg_m2 + inp.live_load_kg_m2 + inp.collateral_load_kg_m2) * inp.purlin_or_girt_spacing_m * f["kx"]
-    w_wind = (inp.wind_load_kg_m2 * inp.wind_pressure_coeff - inp.dead_load_kg_m2 * f["kx"]) * inp.purlin_or_girt_spacing_m
+    gravity_area_load = (
+        inp.dead_load_kg_m2 + inp.live_load_kg_m2 + inp.collateral_load_kg_m2
+    )
+    w_gravity = gravity_area_load * inp.purlin_or_girt_spacing_m * f["kx"]
+    w_wind = (
+        inp.wind_load_kg_m2 * inp.wind_pressure_coeff - inp.dead_load_kg_m2 * f["kx"]
+    ) * inp.purlin_or_girt_spacing_m
     return {
         **f,
         "gravity_load_kg_m": w_gravity,
@@ -77,32 +85,59 @@ def purlin_loads(inp: LoadInputs) -> Dict[str, Any]:
 def girt_loads(inp: LoadInputs) -> Dict[str, Any]:
     return {
         "dead_load_kg_m": inp.dead_load_kg_m2 * inp.purlin_or_girt_spacing_m,
-        "wind_load_kg_m": inp.wind_load_kg_m2 * inp.wind_pressure_coeff * inp.purlin_or_girt_spacing_m,
+        "wind_load_kg_m": inp.wind_load_kg_m2
+        * inp.wind_pressure_coeff
+        * inp.purlin_or_girt_spacing_m,
     }
 
 
-def purlin_moments(inp: LoadInputs, coeff: MomentCoefficients = PURLIN_END_BAY_COEFF, point_mid_kg_m: float = 0.0, point_support_kg_m: float = 0.0) -> Dict[str, float]:
+def purlin_moments(
+    inp: LoadInputs,
+    coeff: MomentCoefficients = PURLIN_END_BAY_COEFF,
+    point_mid_kg_m: float = 0.0,
+    point_support_kg_m: float = 0.0,
+) -> Dict[str, float]:
     l = inp.bay_spacing_m
     loads = purlin_loads(inp)
     return {
-        "gravity_span_moment_kg_m": coeff.span * loads["gravity_load_kg_m"] * l * l + point_mid_kg_m,
-        "gravity_support_moment_kg_m": coeff.support * loads["gravity_load_kg_m"] * l * l + point_support_kg_m,
+        "gravity_span_moment_kg_m": coeff.span * loads["gravity_load_kg_m"] * l * l
+        + point_mid_kg_m,
+        "gravity_support_moment_kg_m": coeff.support
+        * loads["gravity_load_kg_m"]
+        * l
+        * l
+        + point_support_kg_m,
         "wind_span_moment_kg_m": coeff.span * loads["wind_net_load_kg_m"] * l * l,
         "wind_support_moment_kg_m": coeff.support * loads["wind_net_load_kg_m"] * l * l,
     }
 
 
-def girt_moments(inp: LoadInputs, coeff: MomentCoefficients = GIRT_COEFF) -> Dict[str, float]:
+def girt_moments(
+    inp: LoadInputs, coeff: MomentCoefficients = GIRT_COEFF
+) -> Dict[str, float]:
     # Spreadsheet uses unbraced length for gravity and bay spacing for wind.
     l_wind = inp.bay_spacing_m
-    l_unbraced = inp.bay_spacing_m / (inp.sag_bars + 1) if inp.sag_bars >= 0 else inp.bay_spacing_m
+    l_unbraced = (
+        inp.bay_spacing_m / (inp.sag_bars + 1)
+        if inp.sag_bars >= 0
+        else inp.bay_spacing_m
+    )
     loads = girt_loads(inp)
     return {
         "unbraced_length_m": l_unbraced,
-        "dead_span_moment_kg_m": coeff.span * loads["dead_load_kg_m"] * l_unbraced * l_unbraced,
-        "dead_support_moment_kg_m": coeff.support * loads["dead_load_kg_m"] * l_unbraced * l_unbraced,
+        "dead_span_moment_kg_m": coeff.span
+        * loads["dead_load_kg_m"]
+        * l_unbraced
+        * l_unbraced,
+        "dead_support_moment_kg_m": coeff.support
+        * loads["dead_load_kg_m"]
+        * l_unbraced
+        * l_unbraced,
         "wind_span_moment_kg_m": coeff.span * loads["wind_load_kg_m"] * l_wind * l_wind,
-        "wind_support_moment_kg_m": coeff.support * loads["wind_load_kg_m"] * l_wind * l_wind,
+        "wind_support_moment_kg_m": coeff.support
+        * loads["wind_load_kg_m"]
+        * l_wind
+        * l_wind,
     }
 
 
@@ -118,10 +153,31 @@ def z_section_properties(sec: ZSectionInputs) -> Dict[str, float]:
     parts = [
         # name, width_x, height_y, centroid_x, centroid_y, area
         ("web", t, d, t / 2, t + d / 2, t * d),
-        ("top_flange", sec.b1_mm, t, sec.b1_mm / 2, sec.overall_depth_D_mm - t / 2, sec.b1_mm * t),
+        (
+            "top_flange",
+            sec.b1_mm,
+            t,
+            sec.b1_mm / 2,
+            sec.overall_depth_D_mm - t / 2,
+            sec.b1_mm * t,
+        ),
         ("bottom_flange", sec.b2_mm, t, sec.b2_mm / 2, t / 2, sec.b2_mm * t),
-        ("top_lip", t, max(sec.lip1_mm - t, 0), sec.b1_mm - t / 2, sec.overall_depth_D_mm - t - max(sec.lip1_mm - t, 0) / 2, t * max(sec.lip1_mm - t, 0)),
-        ("bottom_lip", t, max(sec.lip2_mm - t, 0), sec.b2_mm - t / 2, t + max(sec.lip2_mm - t, 0) / 2, t * max(sec.lip2_mm - t, 0)),
+        (
+            "top_lip",
+            t,
+            max(sec.lip1_mm - t, 0),
+            sec.b1_mm - t / 2,
+            sec.overall_depth_D_mm - t - max(sec.lip1_mm - t, 0) / 2,
+            t * max(sec.lip1_mm - t, 0),
+        ),
+        (
+            "bottom_lip",
+            t,
+            max(sec.lip2_mm - t, 0),
+            sec.b2_mm - t / 2,
+            t + max(sec.lip2_mm - t, 0) / 2,
+            t * max(sec.lip2_mm - t, 0),
+        ),
     ]
     area_mm2 = sum(p[5] for p in parts)
     xbar = sum(p[3] * p[5] for p in parts) / area_mm2
@@ -150,23 +206,39 @@ def z_section_properties(sec: ZSectionInputs) -> Dict[str, float]:
     }
 
 
-def code_checks(inp: LoadInputs, sec: ZSectionInputs, props: Dict[str, float], support_moment_kg_m: float, span_moment_kg_m: float) -> Dict[str, Any]:
-    fy_kg_cm2 = inp.fy_mpa * 10.1972
+def minimum_web_depth_required_mm(sec: ZSectionInputs, fy_mpa: float) -> float:
+    """Return the minimum clear web depth required by the workbook rule."""
+    baseline_depth_mm = 4.8 * sec.t_mm
+    if sec.t_mm >= 2.1:
+        return baseline_depth_mm
+
+    slenderness_term = (sec.b1_mm / sec.t_mm) ** 2 - 281200.0 / max(fy_mpa, 1e-9)
+    return max(baseline_depth_mm, 2.8 * sec.t_mm * slenderness_term)
+
+
+def bending_stress_n_mm2(moment_kg_m: float, section_modulus_cm3: float) -> float:
+    """Convert a kg-m moment and cm³ section modulus into N/mm² stress."""
+    kg_per_cm2 = abs(moment_kg_m) * 100.0 / max(section_modulus_cm3, 1e-9)
+    return kg_per_cm2 * KG_PER_CM2_TO_N_PER_MM2
+
+
+def code_checks(
+    inp: LoadInputs,
+    sec: ZSectionInputs,
+    props: Dict[str, float],
+    support_moment_kg_m: float,
+    span_moment_kg_m: float,
+) -> Dict[str, Any]:
+    fy_kg_cm2 = inp.fy_mpa * MPA_TO_KG_PER_CM2
     basic_design_stress_n_mm2 = 0.6 * inp.fy_mpa
     overall_depth_ok = sec.overall_depth_D_mm < 150.0 * sec.t_mm
-    dmin_mm = max(
-        4.8 * sec.t_mm,
-        (2.8 * sec.t_mm)
-        * ((sec.b1_mm / sec.t_mm) ** 2 - 281200.0 / max(inp.fy_mpa, 1e-9))
-        if sec.t_mm < 2.1
-        else 4.8 * sec.t_mm,
-    )
+    dmin_mm = minimum_web_depth_required_mm(sec, inp.fy_mpa)
     dmin_ok = props["d_clear_mm"] >= dmin_mm
 
     z_support_cm3 = 2.0 * min(props["zxx_top_cm3"], props["zxx_bottom_cm3"])
     z_span_cm3 = min(props["zxx_top_cm3"], props["zxx_bottom_cm3"])
-    actual_support_n_mm2 = (abs(support_moment_kg_m) * 100.0 / max(z_support_cm3, 1e-9)) * 0.0980665
-    actual_span_n_mm2 = (abs(span_moment_kg_m) * 100.0 / max(z_span_cm3, 1e-9)) * 0.0980665
+    actual_support_n_mm2 = bending_stress_n_mm2(support_moment_kg_m, z_support_cm3)
+    actual_span_n_mm2 = bending_stress_n_mm2(span_moment_kg_m, z_span_cm3)
     return {
         "fy_kg_cm2": fy_kg_cm2,
         "basic_design_stress_n_mm2": basic_design_stress_n_mm2,
