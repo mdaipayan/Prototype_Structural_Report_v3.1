@@ -13,7 +13,7 @@ Units used unless noted otherwise:
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
-from math import pi, sqrt
+from math import sqrt
 from typing import Dict, Any
 
 E_STEEL_N_PER_MM2 = 205000.0
@@ -154,8 +154,14 @@ def code_checks(inp: LoadInputs, sec: ZSectionInputs, props: Dict[str, float], s
     fy_kg_cm2 = inp.fy_mpa * 10.1972
     basic_design_stress_n_mm2 = 0.6 * inp.fy_mpa
     overall_depth_ok = sec.overall_depth_D_mm < 150.0 * sec.t_mm
-    dmin_mm = max(4.8 * sec.t_mm, (2.8 * sec.t_mm) * ((sec.b1_mm / sec.t_mm) ** 2 - 281200.0 / max(inp.fy_mpa, 1e-9)) if sec.t_mm < 2.1 else 4.8 * sec.t_mm)
-    dmin_ok = dmin_mm > 4.8 * sec.t_mm
+    dmin_mm = max(
+        4.8 * sec.t_mm,
+        (2.8 * sec.t_mm)
+        * ((sec.b1_mm / sec.t_mm) ** 2 - 281200.0 / max(inp.fy_mpa, 1e-9))
+        if sec.t_mm < 2.1
+        else 4.8 * sec.t_mm,
+    )
+    dmin_ok = props["d_clear_mm"] >= dmin_mm
 
     z_support_cm3 = 2.0 * min(props["zxx_top_cm3"], props["zxx_bottom_cm3"])
     z_span_cm3 = min(props["zxx_top_cm3"], props["zxx_bottom_cm3"])
