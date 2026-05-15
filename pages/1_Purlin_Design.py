@@ -1,132 +1,173 @@
 import pandas as pd
 import streamlit as st
 from design_calcs import (
-    LoadInputs,
-    ZSectionInputs,
-    PURLIN_END_BAY_COEFF,
-    PURLIN_MID_BAY_COEFF,
-    purlin_loads,
-    purlin_moments,
-    z_section_properties,
-    code_checks,
+    ZPurlinASDInputs,
+    z_purlin_design_moments,
+    z_purlin_flat_width_checks,
+    z_purlin_resolved_loads,
 )
 
-st.set_page_config(page_title="Purlin Design", layout="wide")
-st.title("Purlin Design")
+st.set_page_config(page_title="Z-Purlin Design IS 801:1975", layout="wide")
 
-with st.sidebar:
-    st.header("Design type")
-    design_type = st.selectbox("Bay condition", ["End Bay", "Regular / Mid Bay"])
-    coeff = PURLIN_END_BAY_COEFF if design_type == "End Bay" else PURLIN_MID_BAY_COEFF
+st.title("Cold-Formed Z-Purlin Design (IS 801:1975)")
+st.markdown(
+    "Automated preliminary design checks and load resolution based on the "
+    "Allowable Stress Design (ASD) methodology."
+)
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.subheader("Geometry & Loads")
-    span = st.number_input("Span of building (m)", value=35.5)
-    bay = st.number_input("Bay spacing L (m)", value=9.347)
-    spacing = st.number_input("Purlin spacing Ps (m)", value=1.5)
-    slope_x = st.number_input("Roof slope X", value=10.0)
-    slope_y = st.number_input("Roof slope Y", value=1.0)
-with col2:
-    st.subheader("Load intensities")
-    dl = st.number_input("Dead load DL (kg/m²)", value=15.0)
-    cl = st.number_input("Collateral load CL (kg/m²)", value=75.0)
-    ll = st.number_input("Live load LL (kg/m²)", value=75.0)
-    wl = st.number_input("Wind load WL (kg/m²)", value=130.0)
-    cp = st.number_input("Wind pressure coefficient Cp", value=1.4)
-with col3:
-    st.subheader("Trial Z-section")
-    fy = st.number_input("Steel grade Fy (MPa)", value=345.0)
-    t = st.number_input("Thickness t (mm)", value=2.5)
-    D = st.number_input("Overall depth D (mm)", value=250.0)
-    b1 = st.number_input("Flange b1 (mm)", value=64.0)
-    b2 = st.number_input("Flange b2 (mm)", value=66.0)
-    l1 = st.number_input("Lip L1 (mm)", value=20.0)
-    l2 = st.number_input("Lip L2 (mm)", value=20.0)
+st.sidebar.header("1. Material & Geometry")
+fy = st.sidebar.number_input("Yield Strength, Fy (MPa)", value=250.0, step=10.0)
+span = st.sidebar.number_input("Purlin Span, L (m)", value=5.0, step=0.1)
+spacing = st.sidebar.number_input("Purlin Spacing (m)", value=1.2, step=0.1)
+slope_deg = st.sidebar.number_input("Roof Slope (degrees)", value=10.0, step=1.0)
 
-inp = LoadInputs(
-    span_m=span,
-    bay_spacing_m=bay,
-    purlin_or_girt_spacing_m=spacing,
-    roof_slope_x=slope_x,
-    roof_slope_y=slope_y,
-    dead_load_kg_m2=dl,
-    collateral_load_kg_m2=cl,
-    live_load_kg_m2=ll,
-    wind_load_kg_m2=wl,
-    wind_pressure_coeff=cp,
+st.sidebar.subheader("Trial Section (Z-Profile with Lips)")
+h = st.sidebar.number_input("Total Depth, h (mm)", value=200.0, step=5.0)
+b = st.sidebar.number_input("Flange Width, b (mm)", value=60.0, step=1.0)
+d_lip = st.sidebar.number_input("Lip Depth, d (mm)", value=20.0, step=1.0)
+t = st.sidebar.number_input("Thickness, t (mm)", value=2.0, step=0.1)
+
+st.sidebar.header("2. Loading (IS 875)")
+dl = st.sidebar.number_input("Dead Load (kN/m²)", value=0.15, step=0.01)
+ll = st.sidebar.number_input("Live Load (kN/m²)", value=0.75, step=0.05)
+wl = st.sidebar.number_input("Wind Load - Uplift (kN/m²)", value=-1.50, step=0.1)
+
+inputs = ZPurlinASDInputs(
     fy_mpa=fy,
+    span_m=span,
+    spacing_m=spacing,
+    slope_deg=slope_deg,
+    total_depth_h_mm=h,
+    flange_width_b_mm=b,
+    lip_depth_d_mm=d_lip,
+    thickness_t_mm=t,
+    dead_load_kn_m2=dl,
+    live_load_kn_m2=ll,
+    wind_load_kn_m2=wl,
 )
-sec = ZSectionInputs(
-    t_mm=t,
-    overall_depth_D_mm=D,
-    b1_mm=b1,
-    b2_mm=b2,
-    lip1_mm=l1,
-    lip2_mm=l2,
-)
-loads = purlin_loads(inp)
-moments = purlin_moments(inp, coeff)
-props = z_section_properties(sec)
-checks = code_checks(
-    inp,
-    sec,
-    props,
-    moments["gravity_support_moment_kg_m"],
-    moments["gravity_span_moment_kg_m"],
-)
+checks = z_purlin_flat_width_checks(inputs)
+loads = z_purlin_resolved_loads(inputs)
+moments = z_purlin_design_moments(inputs, loads)
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("Step 1: Geometric Limits Check (Clause 5.2)")
+    st.caption(
+        "Flat-width calculations are simplified for preliminary review and ignore corner radii."
+    )
+
+    st.write(f"**Web Flat-Width Ratio ($h/t$):** {checks['web_ratio']:.2f}")
+    if checks["web_ratio_ok"]:
+        st.success("Web ratio is within the preliminary limit (≤ 150).")
+    else:
+        st.error("Web ratio exceeds limit. Add stiffeners or increase thickness.")
+
+    st.write(f"**Flange Flat-Width Ratio ($w/t$):** {checks['flange_ratio']:.2f}")
+    if checks["flange_ratio_ok"]:
+        st.success("Flange ratio is within the limit for simple lips (≤ 60).")
+    else:
+        st.error("Flange ratio exceeds the limit for simple lip edge stiffeners (60).")
+
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Element": "Web",
+                    "Flat width (mm)": checks["web_flat_width_mm"],
+                    "Ratio": checks["web_ratio"],
+                    "Limit": checks["web_ratio_limit"],
+                    "Status": "OK" if checks["web_ratio_ok"] else "NOT OK",
+                },
+                {
+                    "Element": "Flange",
+                    "Flat width (mm)": checks["flange_flat_width_mm"],
+                    "Ratio": checks["flange_ratio"],
+                    "Limit": checks["flange_ratio_limit"],
+                    "Status": "OK" if checks["flange_ratio_ok"] else "NOT OK",
+                },
+            ]
+        ),
+        width="stretch",
+        hide_index=True,
+    )
+
+with col2:
+    st.subheader("Step 2: Load Resolution")
+
+    st.markdown("**Gravity Loads (DL + LL):**")
+    st.write(f"Normal Component ($W_n$): {loads['gravity_normal_kn_m']:.2f} kN/m")
+    st.write(
+        f"Tangential Component ($W_t$): {loads['gravity_tangential_kn_m']:.2f} kN/m"
+    )
+
+    st.markdown("**Uplift Loads (DL + WL):**")
+    st.write(f"Normal Component ($W_n$): {loads['uplift_normal_kn_m']:.2f} kN/m")
+    st.write(
+        f"Tangential Component ($W_t$): {loads['uplift_tangential_kn_m']:.2f} kN/m"
+    )
+
+    st.dataframe(
+        pd.DataFrame([loads]).T.rename(columns={0: "Value"}),
+        width="stretch",
+    )
 
 st.divider()
-load_cols = st.columns(4)
-load_cols[0].metric("Kx", f"{loads['kx']:.4f}")
-load_cols[1].metric(
-    "Gravity load", f"{loads['gravity_load_kg_m']:.2f} kg/m", loads["gravity_direction"]
-)
-load_cols[2].metric(
-    "Wind net load", f"{loads['wind_net_load_kg_m']:.2f} kg/m", loads["wind_direction"]
-)
-load_cols[3].metric("Coefficient set", f"{coeff.span} / {coeff.support}")
 
-st.subheader("Moments")
-st.dataframe(
-    pd.DataFrame([moments]).T.rename(columns={0: "Value"}), use_container_width=True
+st.subheader("Step 3: Maximum Bending Moments")
+st.markdown(
+    "Assuming the purlin is continuous over supports, moments are approximated as "
+    "$WL^2/10$ for normal loading and $WL^2/8$ for tangential loading."
 )
 
-st.subheader("Section properties")
-st.dataframe(
-    pd.DataFrame([props]).T.rename(columns={0: "Value"}), use_container_width=True
+col3, col4 = st.columns(2)
+
+with col3:
+    st.markdown("**Gravity Combination (Top Flange in Compression)**")
+    st.info(
+        f"Major Axis Moment ($M_x$): **{moments['gravity_major_axis_kn_m']:.2f} kN-m**"
+    )
+    st.info(
+        f"Minor Axis Moment ($M_y$): **{moments['gravity_minor_axis_kn_m']:.2f} kN-m**"
+    )
+
+with col4:
+    st.markdown("**Uplift Combination (Bottom Flange in Compression)**")
+    st.info(
+        f"Major Axis Moment ($M_x$): **{moments['uplift_major_axis_kn_m']:.2f} kN-m**"
+    )
+    st.write(
+        "*Note: wind load acts normally to the roof surface. Tangential load is "
+        "usually resisted by sag rods.*"
+    )
+
+st.divider()
+
+st.subheader("Step 4: Effective Properties & Stress Checks (Framework)")
+st.write(
+    "To complete the application, integrate the effective-width equations from "
+    "IS 801 Clause 5.2.1:"
 )
 
-st.subheader("Checks")
-check_df = pd.DataFrame(
-    [
-        {
-            "Check": "Overall depth < 150t",
-            "Limit/Value": f"{sec.overall_depth_D_mm:.1f} < {checks['overall_depth_limit_mm']:.1f} mm",
-            "Status": "OK" if checks["overall_depth_ok"] else "NOT OK",
-        },
-        {
-            "Check": "Minimum clear web depth",
-            "Limit/Value": (
-                f"{props['d_clear_mm']:.1f} ≥ "
-                f"{checks['minimum_depth_required_mm']:.1f} mm"
-            ),
-            "Status": "OK" if checks["minimum_depth_check_ok"] else "NOT OK",
-        },
-        {
-            "Check": "Support bending stress",
-            "Limit/Value": f"{checks['support_actual_stress_n_mm2']:.2f} ≤ {checks['basic_design_stress_n_mm2']:.2f} N/mm²",
-            "Status": "OK" if checks["support_stress_ok"] else "NOT OK",
-        },
-        {
-            "Check": "Span bending stress",
-            "Limit/Value": f"{checks['span_actual_stress_n_mm2']:.2f} ≤ {checks['basic_design_stress_n_mm2']:.2f} N/mm²",
-            "Status": "OK" if checks["span_stress_ok"] else "NOT OK",
-        },
-    ]
+st.latex(r"""
+\frac{b}{t} = \frac{2120}{\sqrt{f}} \left[ 1 - \frac{465}{(w/t)\sqrt{f}} \right]
+""")
+
+st.code(
+    """
+# Algorithmic flow for iterative stress checks:
+# 1. Assume f = 0.60 * Fy
+# 2. Calculate effective width (b) of the compression flange.
+# 3. Calculate effective Ixx, Iyy, Zxx, Zyy.
+# 4. Calculate actual stress: f_actual = M / Z_eff
+# 5. If f_actual exceeds assumed f, iterate until convergence.
+# 6. Apply Lateral Torsional Buckling checks (Clause 6.3) and biaxial bending interaction (Clause 6.7).
+""",
+    language="python",
 )
-st.dataframe(check_df, use_container_width=True, hide_index=True)
 
 st.warning(
-    "Verify final design against IS 801 and project/client criteria before issue. This app is a reusable calculation scaffold extracted from the workbook."
+    "This tool is for preliminary ASD screening only. Verify final member design, "
+    "effective widths, LTB, interaction checks, connections and project criteria "
+    "before issuing calculations."
 )

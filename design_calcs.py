@@ -14,7 +14,7 @@ Units used unless noted otherwise:
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
-from math import sqrt
+from math import cos, radians, sin, sqrt
 from typing import Any, Dict
 
 E_STEEL_N_PER_MM2 = 205000.0
@@ -49,6 +49,21 @@ class ZSectionInputs:
 
 
 @dataclass
+class ZPurlinASDInputs:
+    fy_mpa: float = 250.0
+    span_m: float = 5.0
+    spacing_m: float = 1.2
+    slope_deg: float = 10.0
+    total_depth_h_mm: float = 200.0
+    flange_width_b_mm: float = 60.0
+    lip_depth_d_mm: float = 20.0
+    thickness_t_mm: float = 2.0
+    dead_load_kn_m2: float = 0.15
+    live_load_kn_m2: float = 0.75
+    wind_load_kn_m2: float = -1.50
+
+
+@dataclass
 class MomentCoefficients:
     span: float
     support: float
@@ -62,6 +77,63 @@ GIRT_COEFF = MomentCoefficients(span=0.0364, support=0.0714)
 def roof_slope_factors(x: float, y: float) -> Dict[str, float]:
     hyp = sqrt(x * x + y * y)
     return {"kx": x / hyp if hyp else 0.0, "ky": y / hyp if hyp else 0.0}
+
+
+def z_purlin_flat_width_checks(inp: ZPurlinASDInputs) -> Dict[str, Any]:
+    """Return preliminary IS 801:1975 flat-width ratio checks for a lipped Z-purlin."""
+    web_flat_width_mm = inp.total_depth_h_mm - 2.0 * inp.thickness_t_mm
+    flange_flat_width_mm = inp.flange_width_b_mm - 2.0 * inp.thickness_t_mm
+    web_ratio = web_flat_width_mm / max(inp.thickness_t_mm, 1e-9)
+    flange_ratio = flange_flat_width_mm / max(inp.thickness_t_mm, 1e-9)
+
+    return {
+        "web_flat_width_mm": web_flat_width_mm,
+        "flange_flat_width_mm": flange_flat_width_mm,
+        "web_ratio": web_ratio,
+        "flange_ratio": flange_ratio,
+        "web_ratio_limit": 150.0,
+        "flange_ratio_limit": 60.0,
+        "web_ratio_ok": web_ratio <= 150.0,
+        "flange_ratio_ok": flange_ratio <= 60.0,
+    }
+
+
+def z_purlin_resolved_loads(inp: ZPurlinASDInputs) -> Dict[str, float]:
+    """Resolve service loads into normal and tangential line loads on a sloped roof."""
+    # Keep the calculation explicit: degrees from UI are converted to radians here.
+    slope_radians = radians(inp.slope_deg)
+    dead_line_load_kn_m = inp.dead_load_kn_m2 * inp.spacing_m
+    live_line_load_kn_m = inp.live_load_kn_m2 * inp.spacing_m
+    wind_line_load_kn_m = inp.wind_load_kn_m2 * inp.spacing_m
+
+    gravity_line_load_kn_m = dead_line_load_kn_m + live_line_load_kn_m
+    uplift_line_load_kn_m = dead_line_load_kn_m + wind_line_load_kn_m
+
+    return {
+        "dead_line_load_kn_m": dead_line_load_kn_m,
+        "live_line_load_kn_m": live_line_load_kn_m,
+        "wind_line_load_kn_m": wind_line_load_kn_m,
+        "gravity_line_load_kn_m": gravity_line_load_kn_m,
+        "gravity_normal_kn_m": gravity_line_load_kn_m * cos(slope_radians),
+        "gravity_tangential_kn_m": gravity_line_load_kn_m * sin(slope_radians),
+        "uplift_line_load_kn_m": uplift_line_load_kn_m,
+        "uplift_normal_kn_m": uplift_line_load_kn_m * cos(slope_radians),
+        "uplift_tangential_kn_m": uplift_line_load_kn_m * sin(slope_radians),
+    }
+
+
+def z_purlin_design_moments(
+    inp: ZPurlinASDInputs, loads: Dict[str, float]
+) -> Dict[str, float]:
+    """Return preliminary continuous-span major/minor-axis design moments in kN-m."""
+    span_squared = inp.span_m**2
+    return {
+        "gravity_major_axis_kn_m": loads["gravity_normal_kn_m"] * span_squared / 10.0,
+        "gravity_minor_axis_kn_m": loads["gravity_tangential_kn_m"]
+        * span_squared
+        / 8.0,
+        "uplift_major_axis_kn_m": loads["uplift_normal_kn_m"] * span_squared / 10.0,
+    }
 
 
 def purlin_loads(inp: LoadInputs) -> Dict[str, Any]:
