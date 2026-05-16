@@ -1,4 +1,9 @@
-import pandas as pd
+"""Streamlit Z-Purlin Design Page
+
+Interactive step-by-step Z-purlin design following IS 801:1975 ASD framework
+with real-time validation and PDF report generation.
+"""
+
 import streamlit as st
 from design_calcs import (
     ZPurlinASDInputs,
