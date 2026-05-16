@@ -1,24 +1,25 @@
 import streamlit as st
 
-st.set_page_config(page_title="Purlin / Girt / Column Design", layout="wide")
+st.set_page_config(page_title="Cold-Formed Member Design", layout="wide")
 
 st.title("Cold-Formed Purlin, Girt & Column Design App")
-st.caption("Created from the uploaded Excel workbook: PURLIN_GIRT DESIGN - AIR Concourse - 15.02.2024")
-
-st.markdown(
-    """
-### Extracted purlin design workflow
-1. Enter building span, bay spacing/effective length, purlin spacing, roof slope, DL, CL, LL, WL, wind pressure coefficient and steel grade.
-2. Calculate roof slope factors `Kx` and `Ky`.
-3. Calculate load combinations: `(DL + LL + CL) × spacing × Kx` and `(WL × Cp − DL × Kx) × spacing`.
-4. Calculate positive span moment and negative support moment using workbook coefficients.
-5. Select/trial a Z-section and calculate clear web depth, centroid, inertia, section moduli, area and unit weight.
-6. Check IS 801 limits: overall depth, minimum depth and effective-width related limits.
-7. Calculate permissible bending stress and actual bending stresses at support/span.
-8. Report OK/NOT OK checks and revise section if needed.
-
-Use the left navigation to open separate Purlin, Girt, and Column pages.
-"""
+st.caption(
+    "Preliminary cold-formed steel member checks for roof and wall framing workflows."
 )
 
-st.info("Column Design is scaffolded for future use, as requested. Add formulas in `design_calcs.py` and UI fields in `pages/3_Column_Design.py`.")
+st.markdown("""
+### Integrated Z-purlin design workflow (IS 801:1975 ASD framework)
+1. Complete one input form for material, framing, section dimensions, service loads and design provision factors.
+2. Submit the form to run preliminary design checks and gross/effective-property design checks on the same page.
+3. Check IS 801:1975 flat-width limits for the web and flange edge stiffener.
+4. Resolve IS 875 dead, imposed and wind loads into normal and tangential roof components.
+5. Estimate continuous-span major-axis and minor-axis moments for preliminary screening.
+6. Review effective-section, LTB/restraint and biaxial interaction checks with code-reference guidance.
+
+Use the left navigation to open the dedicated Purlin, Girt and Column pages.
+""")
+
+st.warning(
+    "This app is a calculation scaffold for preliminary screening. Final designs must be verified "
+    "against the applicable code clauses, project criteria and approved section properties."
+)
