@@ -97,17 +97,37 @@ class AdvancedChecksTest(unittest.TestCase):
         )
 
 
+class PurlinPdfReportTest(unittest.TestCase):
+    def test_pdf_report_contains_downloadable_bytes(self):
+        from dataclasses import asdict
+
+        from pdf_generator import create_design_report
+
+        inputs = ZPurlinASDInputs()
+        checks = z_purlin_flat_width_checks(inputs)
+        loads = z_purlin_resolved_loads(inputs)
+        moments = z_purlin_design_moments(inputs, loads)
+        design = z_purlin_design_analysis(inputs, moments)
+
+        pdf_bytes = create_design_report(
+            asdict(inputs),
+            checks,
+            loads,
+            moments,
+            design=design,
+            all_ok=design["gravity_interaction_ok"] and design["uplift_interaction_ok"],
+        )
+
+        self.assertTrue(pdf_bytes.startswith(b"%PDF"))
+        self.assertGreater(len(pdf_bytes), 1000)
+
+
 class StreamlitPageStructureTest(unittest.TestCase):
-<<<<<<< HEAD
     def test_purlin_girt_and_column_pages_are_registered(self):
-=======
-    def test_only_purlin_design_page_is_registered(self):
->>>>>>> main
         from pathlib import Path
 
         page_names = sorted(path.name for path in Path("pages").glob("*.py"))
 
-<<<<<<< HEAD
         self.assertEqual(
             page_names,
             ["1_Purlin_Design.py", "2_Girt_Design.py", "3_Column_Design.py"],
@@ -122,9 +142,6 @@ class StreamlitPageStructureTest(unittest.TestCase):
 
         app.button[0].click().run(timeout=10)
         self.assertEqual(len(app.exception), 0)
-=======
-        self.assertEqual(page_names, ["1_Purlin_Design.py"])
->>>>>>> main
 
 
 if __name__ == "__main__":
