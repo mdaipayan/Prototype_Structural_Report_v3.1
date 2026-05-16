@@ -16,7 +16,7 @@ retained as future-work placeholders only; they do not run design checks yet.
 1. Complete one guided form for material, span, spacing, slope, trial section,
    service loads, LTB/deflection assumptions and support connection inputs.
 2. Submit the form to run all purlin checks together on one page.
-3. Review the overall pass/review status cards and summary table.
+3. Review the overall pass/review status cards, optimal catalog section recommendation and summary table.
 4. Check simplified IS 801:1975 Clause 5.2 flat-width ratios:
    - Web flat-width ratio limit: `h/t ≤ 150`
    - Flange flat-width ratio limit for simple lips: `w/t ≤ 60`
@@ -28,6 +28,7 @@ retained as future-work placeholders only; they do not run design checks yet.
 7. Review gross/effective section properties, ASD stress checks, effective-width
    screening, LTB screening, biaxial interaction, deflection and connection
    screening with code-reference guidance.
+8. Download a step-by-step PDF report with formulas, values, permissible limits, references, the optimal section recommendation and conclusion.
 
 ## App structure
 

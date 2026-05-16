@@ -97,6 +97,31 @@ class AdvancedChecksTest(unittest.TestCase):
         )
 
 
+class PurlinPdfReportTest(unittest.TestCase):
+    def test_pdf_report_contains_downloadable_bytes(self):
+        from dataclasses import asdict
+
+        from pdf_generator import create_design_report
+
+        inputs = ZPurlinASDInputs()
+        checks = z_purlin_flat_width_checks(inputs)
+        loads = z_purlin_resolved_loads(inputs)
+        moments = z_purlin_design_moments(inputs, loads)
+        design = z_purlin_design_analysis(inputs, moments)
+
+        pdf_bytes = create_design_report(
+            asdict(inputs),
+            checks,
+            loads,
+            moments,
+            design=design,
+            all_ok=design["gravity_interaction_ok"] and design["uplift_interaction_ok"],
+        )
+
+        self.assertTrue(pdf_bytes.startswith(b"%PDF"))
+        self.assertGreater(len(pdf_bytes), 1000)
+
+
 class StreamlitPageStructureTest(unittest.TestCase):
     def test_purlin_girt_and_column_pages_are_registered(self):
         from pathlib import Path

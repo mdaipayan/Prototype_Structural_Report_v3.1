@@ -4,6 +4,8 @@ All current cold-formed design workflows live on this single page so users do
 not need to jump between preliminary and advanced analysis pages.
 """
 
+from dataclasses import asdict
+
 import pandas as pd
 import streamlit as st
 
@@ -22,9 +24,198 @@ from design_calcs import (
     z_purlin_flat_width_checks,
     z_purlin_resolved_loads,
 )
+from pdf_generator import create_design_report
+
+COMMON_Z_PURLIN_CATALOG = {
+    "depths_mm": [150.0, 175.0, 200.0, 225.0, 250.0, 275.0, 300.0, 350.0],
+    "flanges_mm": [50.0, 60.0, 70.0, 80.0, 90.0, 100.0],
+    "lips_mm": [15.0, 20.0, 25.0],
+    "thicknesses_mm": [1.5, 2.0, 2.5, 3.0],
+}
 
 
-def status_label(is_ok: bool, pass_label: str = "PASS", fail_label: str = "REVIEW") -> str:
+def section_name(section: dict[str, float]) -> str:
+    """Return a compact Z-section label."""
+    return (
+        f"Z {section['total_depth_h_mm']:.0f} × {section['flange_width_b_mm']:.0f} × "
+        f"{section['lip_depth_d_mm']:.0f} × {section['thickness_t_mm']:.2f} mm"
+    )
+
+
+def find_optimal_section(
+    base_inputs: ZPurlinASDInputs,
+    unbraced_length_m: float,
+    ltb_support_condition: str,
+    deflection_support_condition: str,
+    connection: BoltConnection,
+) -> dict:
+    """Find the lightest catalog Z-purlin that passes the included checks.
+
+    If no catalog section passes, return the lowest-utilization candidate so the
+    designer still gets a clear direction for increasing section size.
+    """
+    candidate_dimensions = set()
+    for depth in COMMON_Z_PURLIN_CATALOG["depths_mm"] + [base_inputs.total_depth_h_mm]:
+        for flange in COMMON_Z_PURLIN_CATALOG["flanges_mm"] + [
+            base_inputs.flange_width_b_mm
+        ]:
+            for lip in COMMON_Z_PURLIN_CATALOG["lips_mm"] + [
+                base_inputs.lip_depth_d_mm
+            ]:
+                for thickness in COMMON_Z_PURLIN_CATALOG["thicknesses_mm"] + [
+                    base_inputs.thickness_t_mm
+                ]:
+                    if (
+                        depth <= 2.0 * thickness
+                        or flange <= 2.0 * thickness
+                        or lip <= thickness
+                    ):
+                        continue
+                    candidate_dimensions.add((depth, flange, lip, thickness))
+
+    evaluated_candidates = []
+    for depth, flange, lip, thickness in sorted(candidate_dimensions):
+        candidate_inputs = ZPurlinASDInputs(
+            fy_mpa=base_inputs.fy_mpa,
+            span_m=base_inputs.span_m,
+            spacing_m=base_inputs.spacing_m,
+            slope_deg=base_inputs.slope_deg,
+            total_depth_h_mm=depth,
+            flange_width_b_mm=flange,
+            lip_depth_d_mm=lip,
+            thickness_t_mm=thickness,
+            dead_load_kn_m2=base_inputs.dead_load_kn_m2,
+            live_load_kn_m2=base_inputs.live_load_kn_m2,
+            wind_load_kn_m2=base_inputs.wind_load_kn_m2,
+            normal_moment_denominator=base_inputs.normal_moment_denominator,
+            tangential_moment_denominator=base_inputs.tangential_moment_denominator,
+            effective_section_factor=base_inputs.effective_section_factor,
+            ltb_reduction_factor=base_inputs.ltb_reduction_factor,
+        )
+        candidate_checks = z_purlin_flat_width_checks(candidate_inputs)
+        candidate_loads = z_purlin_resolved_loads(candidate_inputs)
+        candidate_moments = z_purlin_design_moments(candidate_inputs, candidate_loads)
+        candidate_design = z_purlin_design_analysis(candidate_inputs, candidate_moments)
+        candidate_max_stress = max(
+            candidate_design["gravity_major_stress_n_mm2"],
+            candidate_design["uplift_major_stress_n_mm2"],
+        )
+        candidate_effective = effective_section_properties(
+            candidate_design,
+            candidate_checks,
+            candidate_inputs.fy_mpa,
+            candidate_max_stress,
+        )
+        candidate_ltb = ltb_check(
+            candidate_max_stress,
+            unbraced_length_m,
+            candidate_design,
+            ltb_support_condition,
+            candidate_inputs.fy_mpa,
+        )
+        candidate_interaction = biaxial_interaction_check(
+            candidate_design["gravity_major_stress_n_mm2"],
+            candidate_design["gravity_minor_stress_n_mm2"],
+            candidate_ltb["allowable_stress_mpa"],
+            candidate_design["allowable_stress_n_mm2"],
+        )
+        candidate_live_deflection = deflection_check(
+            candidate_loads["live_line_load_kn_m"],
+            candidate_inputs.span_m,
+            candidate_effective["effective_ixx_cm4"],
+            load_type="live",
+            support_condition=deflection_support_condition,
+        )
+        candidate_wind_deflection = deflection_check(
+            abs(candidate_loads["wind_line_load_kn_m"]),
+            candidate_inputs.span_m,
+            candidate_effective["effective_ixx_cm4"],
+            load_type="wind",
+            support_condition=deflection_support_condition,
+        )
+        candidate_shear = max(
+            abs(
+                candidate_loads["gravity_line_load_kn_m"]
+                * candidate_inputs.span_m
+                / 2.0
+            ),
+            abs(
+                candidate_loads["uplift_line_load_kn_m"] * candidate_inputs.span_m / 2.0
+            ),
+        )
+        candidate_connection = connection_check(
+            candidate_shear,
+            connection,
+            candidate_inputs.thickness_t_mm,
+            candidate_inputs.fy_mpa,
+        )
+        governing_utilization = max(
+            candidate_checks["web_ratio"] / candidate_checks["web_ratio_limit"],
+            candidate_checks["flange_ratio"] / candidate_checks["flange_ratio_limit"],
+            candidate_design["gravity_interaction_ratio"],
+            candidate_design["uplift_interaction_ratio"],
+            candidate_ltb["utilization_ratio"],
+            candidate_interaction["interaction_ratio"],
+            candidate_live_deflection["utilization_ratio"],
+            candidate_wind_deflection["utilization_ratio"],
+            candidate_connection["utilization_ratio"],
+        )
+        passes = all(
+            [
+                candidate_checks["web_ratio_ok"],
+                candidate_checks["flange_ratio_ok"],
+                candidate_design["gravity_interaction_ok"],
+                candidate_design["uplift_interaction_ok"],
+                candidate_ltb["is_safe"],
+                candidate_interaction["is_safe"],
+                candidate_live_deflection["is_safe"],
+                candidate_wind_deflection["is_safe"],
+                candidate_connection["is_safe"],
+            ]
+        )
+        evaluated_candidates.append(
+            {
+                "section": asdict(candidate_inputs),
+                "name": section_name(asdict(candidate_inputs)),
+                "weight_kg_m": candidate_design["weight_kg_m"],
+                "governing_utilization": governing_utilization,
+                "passes": passes,
+                "design": candidate_design,
+                "checks": candidate_checks,
+                "ltb": candidate_ltb,
+                "interaction": candidate_interaction,
+                "live_deflection": candidate_live_deflection,
+                "wind_deflection": candidate_wind_deflection,
+                "connection": candidate_connection,
+            }
+        )
+
+    passing_candidates = [
+        candidate for candidate in evaluated_candidates if candidate["passes"]
+    ]
+    if passing_candidates:
+        return min(
+            passing_candidates,
+            key=lambda candidate: (
+                candidate["weight_kg_m"],
+                candidate["governing_utilization"],
+                candidate["section"]["total_depth_h_mm"],
+            ),
+        )
+
+    return min(
+        evaluated_candidates,
+        key=lambda candidate: (
+            candidate["governing_utilization"],
+            candidate["weight_kg_m"],
+            -candidate["section"]["total_depth_h_mm"],
+        ),
+    )
+
+
+def status_label(
+    is_ok: bool, pass_label: str = "PASS", fail_label: str = "REVIEW"
+) -> str:
     """Return a user-friendly status label for summary tables."""
     return f"✅ {pass_label}" if is_ok else f"⚠️ {fail_label}"
 
@@ -51,7 +242,9 @@ st.info(
 
 with st.form("z_purlin_design_form"):
     st.subheader("1) Enter design inputs")
-    st.write("Default values are provided so you can run a quick sample design immediately.")
+    st.write(
+        "Default values are provided so you can run a quick sample design immediately."
+    )
 
     material_col, section_col, load_col = st.columns(3)
 
@@ -61,21 +254,29 @@ with st.form("z_purlin_design_form"):
             "Yield strength, Fy (MPa)", min_value=1.0, value=250.0, step=10.0
         )
         span = st.number_input("Purlin span, L (m)", min_value=0.1, value=5.0, step=0.1)
-        spacing = st.number_input("Purlin spacing (m)", min_value=0.1, value=1.2, step=0.1)
+        spacing = st.number_input(
+            "Purlin spacing (m)", min_value=0.1, value=1.2, step=0.1
+        )
         slope_deg = st.number_input("Roof slope (degrees)", value=10.0, step=1.0)
 
     with section_col:
         st.markdown("**Trial Z-section**")
-        h = st.number_input("Total depth, h (mm)", min_value=10.0, value=200.0, step=5.0)
+        h = st.number_input(
+            "Total depth, h (mm)", min_value=10.0, value=200.0, step=5.0
+        )
         b = st.number_input("Flange width, b (mm)", min_value=5.0, value=60.0, step=1.0)
-        d_lip = st.number_input("Lip depth, d (mm)", min_value=0.0, value=20.0, step=1.0)
+        d_lip = st.number_input(
+            "Lip depth, d (mm)", min_value=0.0, value=20.0, step=1.0
+        )
         t = st.number_input("Thickness, t (mm)", min_value=0.1, value=2.0, step=0.1)
 
     with load_col:
         st.markdown("**Service loads (IS 875 inputs)**")
         dl = st.number_input("Dead load, DL (kN/m²)", value=0.15, step=0.01)
         ll = st.number_input("Live / imposed load, LL (kN/m²)", value=0.75, step=0.05)
-        wl = st.number_input("Wind load, WL uplift negative (kN/m²)", value=-1.50, step=0.1)
+        wl = st.number_input(
+            "Wind load, WL uplift negative (kN/m²)", value=-1.50, step=0.1
+        )
 
     with st.expander("Advanced design assumptions", expanded=True):
         design_col, service_col, connection_col = st.columns(3)
@@ -112,7 +313,13 @@ with st.form("z_purlin_design_form"):
             )
             ltb_support = st.selectbox(
                 "LTB support condition",
-                ["continuous", "simply_supported", "fixed_one_end", "fixed_both_ends", "cantilever"],
+                [
+                    "continuous",
+                    "simply_supported",
+                    "fixed_one_end",
+                    "fixed_both_ends",
+                    "cantilever",
+                ],
             )
             deflection_support = st.selectbox(
                 "Deflection support condition",
@@ -122,10 +329,16 @@ with st.form("z_purlin_design_form"):
         with connection_col:
             st.markdown("**Support connection**")
             bolt_dia = st.number_input("Bolt diameter (mm)", 12.0, 24.0, 16.0, step=2.0)
-            bolt_grade = st.selectbox("Bolt grade", ["4.6", "4.8", "5.6", "5.8", "6.8", "8.8", "10.9"], index=5)
+            bolt_grade = st.selectbox(
+                "Bolt grade",
+                ["4.6", "4.8", "5.6", "5.8", "6.8", "8.8", "10.9"],
+                index=5,
+            )
             num_bolts = st.number_input("Number of bolts", 1, 8, 2)
             hole_dia = st.number_input("Hole diameter (mm)", 12.0, 30.0, 18.0, step=1.0)
-            edge_dist = st.number_input("Edge distance (mm)", 20.0, 80.0, 30.0, step=5.0)
+            edge_dist = st.number_input(
+                "Edge distance (mm)", 20.0, 80.0, 30.0, step=5.0
+            )
             end_dist = st.number_input("End distance (mm)", 20.0, 100.0, 40.0, step=5.0)
 
     submitted = st.form_submit_button("Run complete Z-purlin design", type="primary")
@@ -139,13 +352,21 @@ if not submitted:
 
 validation_errors = []
 if h <= 2.0 * t:
-    validation_errors.append("Total depth h must be greater than 2t to leave a positive clear web depth.")
+    validation_errors.append(
+        "Total depth h must be greater than 2t to leave a positive clear web depth."
+    )
 if b <= 2.0 * t:
-    validation_errors.append("Flange width b must be greater than 2t to leave a positive flat flange width.")
+    validation_errors.append(
+        "Flange width b must be greater than 2t to leave a positive flat flange width."
+    )
 if d_lip and d_lip <= t:
-    validation_errors.append("Lip depth d should be greater than t for a lipped Z-profile trial section.")
+    validation_errors.append(
+        "Lip depth d should be greater than t for a lipped Z-profile trial section."
+    )
 if hole_dia < bolt_dia:
-    validation_errors.append("Hole diameter should not be smaller than the bolt diameter.")
+    validation_errors.append(
+        "Hole diameter should not be smaller than the bolt diameter."
+    )
 
 if validation_errors:
     st.error("Please fix the following inputs before running the design:")
@@ -213,6 +434,13 @@ design_shear = max(
     abs(loads["uplift_line_load_kn_m"] * span / 2.0),
 )
 connection_result = connection_check(design_shear, connection, t, fy)
+optimal_section = find_optimal_section(
+    inputs,
+    unbraced_length,
+    ltb_support,
+    deflection_support,
+    connection,
+)
 
 all_ok = all(
     [
@@ -240,7 +468,67 @@ metric_1, metric_2, metric_3, metric_4 = st.columns(4)
 metric_1.metric("Gravity interaction", f"{design['gravity_interaction_ratio']:.1%}")
 metric_2.metric("Uplift interaction", f"{design['uplift_interaction_ratio']:.1%}")
 metric_3.metric("LTB utilization", f"{ltb_result['utilization_ratio']:.1%}")
-metric_4.metric("Connection utilization", f"{connection_result['utilization_ratio']:.1%}")
+metric_4.metric(
+    "Connection utilization", f"{connection_result['utilization_ratio']:.1%}"
+)
+
+st.subheader("Most optimal section size from built-in catalog")
+if optimal_section["passes"]:
+    st.success(
+        "Recommended lightest passing section: "
+        f"**{optimal_section['name']}** "
+        f"({optimal_section['weight_kg_m']:.2f} kg/m, governing utilization "
+        f"{optimal_section['governing_utilization']:.1%})."
+    )
+else:
+    st.warning(
+        "No built-in catalog section passed every included check. Closest option for engineering review: "
+        f"**{optimal_section['name']}** "
+        f"({optimal_section['weight_kg_m']:.2f} kg/m, governing utilization "
+        f"{optimal_section['governing_utilization']:.1%})."
+    )
+st.dataframe(
+    pd.DataFrame(
+        [
+            {
+                "Recommended section": optimal_section["name"],
+                "Weight (kg/m)": f"{optimal_section['weight_kg_m']:.2f}",
+                "Governing utilization": f"{optimal_section['governing_utilization']:.1%}",
+                "Catalog result": (
+                    "Passes all included checks"
+                    if optimal_section["passes"]
+                    else "Closest option - review required"
+                ),
+            }
+        ]
+    ),
+    width="stretch",
+    hide_index=True,
+)
+
+pdf_bytes = create_design_report(
+    asdict(inputs),
+    checks,
+    loads,
+    moments,
+    design=design,
+    effective_props=effective_props,
+    ltb_result=ltb_result,
+    interaction=interaction,
+    live_deflection=live_deflection,
+    wind_deflection=wind_deflection,
+    connection_result=connection_result,
+    optimal_section=optimal_section,
+    all_ok=all_ok,
+)
+st.download_button(
+    "Download purlin PDF report",
+    data=pdf_bytes,
+    file_name="z_purlin_design_report.pdf",
+    mime="application/pdf",
+    type="primary",
+    help="Download a step-by-step report with formulas, values, references, permissible limits, the optimal catalog section and conclusion.",
+)
 
 summary_df = pd.DataFrame(
     [
@@ -323,13 +611,11 @@ summary_tab, loads_tab, section_tab, advanced_tab, references_tab = st.tabs(
 
 with summary_tab:
     st.subheader("Step 1: Geometry and flat-width checks")
-    st.markdown(
-        """
+    st.markdown("""
         - **PASS** means the trial input is within the simplified screening limit shown in this app.
         - **REVIEW** means the section, thickness, load, restraint, connection or project criteria should be revised.
         - The flat-width checks are shown first because IS 801:1975 Clause 5.2 element proportioning affects the later stress checks.
-        """
-    )
+        """)
     st.dataframe(
         pd.DataFrame(
             [
@@ -337,7 +623,11 @@ with summary_tab:
                 {"Input": "Span", "Value": span, "Unit": "m"},
                 {"Input": "Spacing", "Value": spacing, "Unit": "m"},
                 {"Input": "Slope", "Value": slope_deg, "Unit": "degrees"},
-                {"Input": "Section h × b × lip × t", "Value": f"{h:.1f} × {b:.1f} × {d_lip:.1f} × {t:.1f}", "Unit": "mm"},
+                {
+                    "Input": "Section h × b × lip × t",
+                    "Value": f"{h:.1f} × {b:.1f} × {d_lip:.1f} × {t:.1f}",
+                    "Unit": "mm",
+                },
             ]
         ),
         width="stretch",
@@ -346,16 +636,42 @@ with summary_tab:
 
 with loads_tab:
     st.subheader("Step 2: Resolve IS 875 service loads")
-    st.caption("Dead, live/imposed and wind inputs are entered as service pressures and converted to purlin line loads.")
+    st.caption(
+        "Dead, live/imposed and wind inputs are entered as service pressures and converted to purlin line loads."
+    )
     st.dataframe(
         pd.DataFrame(
             [
-                {"Load component": "Dead line load", "Value": loads["dead_line_load_kn_m"], "Unit": "kN/m"},
-                {"Load component": "Live line load", "Value": loads["live_line_load_kn_m"], "Unit": "kN/m"},
-                {"Load component": "Wind line load", "Value": loads["wind_line_load_kn_m"], "Unit": "kN/m"},
-                {"Load component": "Gravity normal component", "Value": loads["gravity_normal_kn_m"], "Unit": "kN/m"},
-                {"Load component": "Gravity tangential component", "Value": loads["gravity_tangential_kn_m"], "Unit": "kN/m"},
-                {"Load component": "Uplift normal component", "Value": loads["uplift_normal_kn_m"], "Unit": "kN/m"},
+                {
+                    "Load component": "Dead line load",
+                    "Value": loads["dead_line_load_kn_m"],
+                    "Unit": "kN/m",
+                },
+                {
+                    "Load component": "Live line load",
+                    "Value": loads["live_line_load_kn_m"],
+                    "Unit": "kN/m",
+                },
+                {
+                    "Load component": "Wind line load",
+                    "Value": loads["wind_line_load_kn_m"],
+                    "Unit": "kN/m",
+                },
+                {
+                    "Load component": "Gravity normal component",
+                    "Value": loads["gravity_normal_kn_m"],
+                    "Unit": "kN/m",
+                },
+                {
+                    "Load component": "Gravity tangential component",
+                    "Value": loads["gravity_tangential_kn_m"],
+                    "Unit": "kN/m",
+                },
+                {
+                    "Load component": "Uplift normal component",
+                    "Value": loads["uplift_normal_kn_m"],
+                    "Unit": "kN/m",
+                },
             ]
         ),
         width="stretch",
@@ -366,9 +682,21 @@ with loads_tab:
     st.dataframe(
         pd.DataFrame(
             [
-                {"Moment": "Gravity Mx", "Formula": f"Wn L² / {moments['normal_moment_denominator']:.2f}", "Value (kN-m)": moments["gravity_major_axis_kn_m"]},
-                {"Moment": "Gravity My", "Formula": f"Wt L² / {moments['tangential_moment_denominator']:.2f}", "Value (kN-m)": moments["gravity_minor_axis_kn_m"]},
-                {"Moment": "Uplift Mx", "Formula": f"Wn L² / {moments['normal_moment_denominator']:.2f}", "Value (kN-m)": moments["uplift_major_axis_kn_m"]},
+                {
+                    "Moment": "Gravity Mx",
+                    "Formula": f"Wn L² / {moments['normal_moment_denominator']:.2f}",
+                    "Value (kN-m)": moments["gravity_major_axis_kn_m"],
+                },
+                {
+                    "Moment": "Gravity My",
+                    "Formula": f"Wt L² / {moments['tangential_moment_denominator']:.2f}",
+                    "Value (kN-m)": moments["gravity_minor_axis_kn_m"],
+                },
+                {
+                    "Moment": "Uplift Mx",
+                    "Formula": f"Wn L² / {moments['normal_moment_denominator']:.2f}",
+                    "Value (kN-m)": moments["uplift_major_axis_kn_m"],
+                },
             ]
         ),
         width="stretch",
@@ -377,7 +705,9 @@ with loads_tab:
 
 with section_tab:
     st.subheader("Step 4: Section properties and ASD stress checks")
-    st.caption("Gross properties are reduced by user-entered effective-section and restraint factors for preliminary screening.")
+    st.caption(
+        "Gross properties are reduced by user-entered effective-section and restraint factors for preliminary screening."
+    )
     st.dataframe(
         pd.DataFrame(
             [
@@ -385,8 +715,16 @@ with section_tab:
                 {"Property": "Weight", "Value": design["weight_kg_m"], "Unit": "kg/m"},
                 {"Property": "Ixx", "Value": design["ixx_cm4"], "Unit": "cm⁴"},
                 {"Property": "Iyy", "Value": design["iyy_cm4"], "Unit": "cm⁴"},
-                {"Property": "Effective Zxx", "Value": design["zxx_effective_cm3"], "Unit": "cm³"},
-                {"Property": "Effective Zyy", "Value": design["zyy_effective_cm3"], "Unit": "cm³"},
+                {
+                    "Property": "Effective Zxx",
+                    "Value": design["zxx_effective_cm3"],
+                    "Unit": "cm³",
+                },
+                {
+                    "Property": "Effective Zyy",
+                    "Value": design["zyy_effective_cm3"],
+                    "Unit": "cm³",
+                },
             ]
         ),
         width="stretch",
@@ -397,9 +735,21 @@ with section_tab:
     st.dataframe(
         pd.DataFrame(
             [
-                {"Case": "Gravity major-axis bending", "Actual stress (MPa)": design["gravity_major_stress_n_mm2"], "Allowable stress (MPa)": design["allowable_stress_n_mm2"]},
-                {"Case": "Gravity minor-axis bending", "Actual stress (MPa)": design["gravity_minor_stress_n_mm2"], "Allowable stress (MPa)": design["allowable_stress_n_mm2"]},
-                {"Case": "Uplift major-axis bending", "Actual stress (MPa)": design["uplift_major_stress_n_mm2"], "Allowable stress (MPa)": design["allowable_stress_n_mm2"]},
+                {
+                    "Case": "Gravity major-axis bending",
+                    "Actual stress (MPa)": design["gravity_major_stress_n_mm2"],
+                    "Allowable stress (MPa)": design["allowable_stress_n_mm2"],
+                },
+                {
+                    "Case": "Gravity minor-axis bending",
+                    "Actual stress (MPa)": design["gravity_minor_stress_n_mm2"],
+                    "Allowable stress (MPa)": design["allowable_stress_n_mm2"],
+                },
+                {
+                    "Case": "Uplift major-axis bending",
+                    "Actual stress (MPa)": design["uplift_major_stress_n_mm2"],
+                    "Allowable stress (MPa)": design["allowable_stress_n_mm2"],
+                },
             ]
         ),
         width="stretch",
@@ -411,11 +761,26 @@ with advanced_tab:
     st.dataframe(
         pd.DataFrame(
             [
-                {"Item": "Web reduction factor", "Value": effective_props["web_reduction_factor"]},
-                {"Item": "Flange reduction factor", "Value": effective_props["flange_reduction_factor"]},
-                {"Item": "Combined reduction factor", "Value": effective_props["combined_reduction_factor"]},
-                {"Item": "Advanced effective Ixx", "Value": effective_props["effective_ixx_cm4"]},
-                {"Item": "Advanced effective Zxx", "Value": effective_props["effective_zxx_cm3"]},
+                {
+                    "Item": "Web reduction factor",
+                    "Value": effective_props["web_reduction_factor"],
+                },
+                {
+                    "Item": "Flange reduction factor",
+                    "Value": effective_props["flange_reduction_factor"],
+                },
+                {
+                    "Item": "Combined reduction factor",
+                    "Value": effective_props["combined_reduction_factor"],
+                },
+                {
+                    "Item": "Advanced effective Ixx",
+                    "Value": effective_props["effective_ixx_cm4"],
+                },
+                {
+                    "Item": "Advanced effective Zxx",
+                    "Value": effective_props["effective_zxx_cm3"],
+                },
             ]
         ),
         width="stretch",
@@ -437,8 +802,12 @@ with advanced_tab:
 
     with biaxial_col:
         st.subheader("Biaxial bending")
-        st.metric("Major-axis utilization", f"{interaction['major_axis_utilization']:.1%}")
-        st.metric("Minor-axis utilization", f"{interaction['minor_axis_utilization']:.1%}")
+        st.metric(
+            "Major-axis utilization", f"{interaction['major_axis_utilization']:.1%}"
+        )
+        st.metric(
+            "Minor-axis utilization", f"{interaction['minor_axis_utilization']:.1%}"
+        )
         st.metric("Interaction ratio", f"{interaction['interaction_ratio']:.3f}")
         st.write(f"Governing direction: **{interaction['governer']}**")
         show_status_message(
@@ -475,12 +844,36 @@ with advanced_tab:
     st.dataframe(
         pd.DataFrame(
             [
-                {"Item": "Design support shear", "Value": connection_result["design_shear_kn"], "Unit": "kN"},
-                {"Item": "Bolt shear capacity", "Value": connection_result["bolt_shear_capacity_kn"], "Unit": "kN"},
-                {"Item": "Bearing capacity", "Value": connection_result["bearing_capacity_kn"], "Unit": "kN"},
-                {"Item": "Governing capacity", "Value": connection_result["governing_capacity_kn"], "Unit": "kN"},
-                {"Item": "Utilization", "Value": connection_result["utilization_ratio"], "Unit": "ratio"},
-                {"Item": "Governing mode", "Value": connection_result["governing_mode"], "Unit": "-"},
+                {
+                    "Item": "Design support shear",
+                    "Value": connection_result["design_shear_kn"],
+                    "Unit": "kN",
+                },
+                {
+                    "Item": "Bolt shear capacity",
+                    "Value": connection_result["bolt_shear_capacity_kn"],
+                    "Unit": "kN",
+                },
+                {
+                    "Item": "Bearing capacity",
+                    "Value": connection_result["bearing_capacity_kn"],
+                    "Unit": "kN",
+                },
+                {
+                    "Item": "Governing capacity",
+                    "Value": connection_result["governing_capacity_kn"],
+                    "Unit": "kN",
+                },
+                {
+                    "Item": "Utilization",
+                    "Value": connection_result["utilization_ratio"],
+                    "Unit": "ratio",
+                },
+                {
+                    "Item": "Governing mode",
+                    "Value": connection_result["governing_mode"],
+                    "Unit": "-",
+                },
             ]
         ),
         width="stretch",
@@ -492,12 +885,36 @@ with references_tab:
     st.dataframe(
         pd.DataFrame(
             [
-                {"Design item": "Cold-formed element flat-width ratios", "Reference": "IS 801:1975 Clause 5.2", "How used here": "Flags web and flange width-to-thickness ratios."},
-                {"Design item": "Effective width of compression elements", "Reference": "IS 801:1975 Clause 5.2.1", "How used here": "Provides reduction factors for screening effective properties."},
-                {"Design item": "Bending stress and LTB review", "Reference": "IS 801:1975 Clause 6.3", "How used here": "Screens bending stress with restraint assumptions."},
-                {"Design item": "Combined biaxial bending", "Reference": "IS 801:1975 Clause 6.7", "How used here": "Checks major-plus-minor bending interaction."},
-                {"Design item": "Dead, live and wind load inputs", "Reference": "IS 875 Parts 1, 2 and 3", "How used here": "Converts service pressures into purlin line loads."},
-                {"Design item": "Support fasteners", "Reference": "IS 1367 / IS 800 guidance", "How used here": "Screens bolt shear and purlin bearing at supports."},
+                {
+                    "Design item": "Cold-formed element flat-width ratios",
+                    "Reference": "IS 801:1975 Clause 5.2",
+                    "How used here": "Flags web and flange width-to-thickness ratios.",
+                },
+                {
+                    "Design item": "Effective width of compression elements",
+                    "Reference": "IS 801:1975 Clause 5.2.1",
+                    "How used here": "Provides reduction factors for screening effective properties.",
+                },
+                {
+                    "Design item": "Bending stress and LTB review",
+                    "Reference": "IS 801:1975 Clause 6.3",
+                    "How used here": "Screens bending stress with restraint assumptions.",
+                },
+                {
+                    "Design item": "Combined biaxial bending",
+                    "Reference": "IS 801:1975 Clause 6.7",
+                    "How used here": "Checks major-plus-minor bending interaction.",
+                },
+                {
+                    "Design item": "Dead, live and wind load inputs",
+                    "Reference": "IS 875 Parts 1, 2 and 3",
+                    "How used here": "Converts service pressures into purlin line loads.",
+                },
+                {
+                    "Design item": "Support fasteners",
+                    "Reference": "IS 1367 / IS 800 guidance",
+                    "How used here": "Screens bolt shear and purlin bearing at supports.",
+                },
             ]
         ),
         width="stretch",
