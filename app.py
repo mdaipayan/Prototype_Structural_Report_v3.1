@@ -1,23 +1,28 @@
 import streamlit as st
 
-st.set_page_config(page_title="Cold-Formed Member Design", layout="wide")
+st.set_page_config(page_title="Complete Z-Purlin Design", layout="wide")
 
-st.title("Cold-Formed Purlin, Girt & Column Design App")
-st.caption(
-    "Preliminary cold-formed steel member checks for roof and wall framing workflows."
+st.title("Complete Cold-Formed Z-Purlin Design App")
+st.caption("A focused, user-friendly Streamlit workflow for Z-purlin design only.")
+
+st.markdown(
+    """
+### What this app does now
+
+This app is intentionally focused on **one complete Z-purlin design workflow**.
+Girt design, column design and the separate advanced-analysis page have been removed for now so users do not need to decide which page contains the governing checks.
+
+Open **Purlin Design** from the left navigation to run:
+
+1. Material, span, spacing, slope, section and service-load input.
+2. IS 801:1975 flat-width checks for web and flange elements.
+3. IS 875 load resolution into normal and tangential roof components.
+4. Preliminary continuous-span bending moments.
+5. Gross/effective section-property and ASD stress checks.
+6. Effective-width, LTB, biaxial bending, deflection and connection screening.
+7. User-friendly pass/review summaries and code-reference notes.
+"""
 )
-
-st.markdown("""
-### Integrated Z-purlin design workflow (IS 801:1975 ASD framework)
-1. Complete one input form for material, framing, section dimensions, service loads and design provision factors.
-2. Submit the form to run preliminary design checks and gross/effective-property design checks on the same page.
-3. Check IS 801:1975 flat-width limits for the web and flange edge stiffener.
-4. Resolve IS 875 dead, imposed and wind loads into normal and tangential roof components.
-5. Estimate continuous-span major-axis and minor-axis moments for preliminary screening.
-6. Review effective-section, LTB/restraint and biaxial interaction checks with code-reference guidance.
-
-Use the left navigation to open the dedicated Purlin, Girt and Column pages.
-""")
 
 st.warning(
     "This app is a calculation scaffold for preliminary screening. Final designs must be verified "
