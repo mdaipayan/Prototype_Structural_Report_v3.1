@@ -5,6 +5,7 @@ from design_calcs import (
     ZPurlinASDInputs,
     ZSectionInputs,
     code_checks,
+    z_purlin_advanced_analysis,
     z_purlin_design_moments,
     z_purlin_flat_width_checks,
     z_purlin_resolved_loads,
@@ -63,6 +64,19 @@ class ZPurlinASDWorkflowTest(unittest.TestCase):
         self.assertAlmostEqual(moments["gravity_major_axis_kn_m"], 2.658981, places=6)
         self.assertAlmostEqual(moments["gravity_minor_axis_kn_m"], 0.586063, places=6)
         self.assertAlmostEqual(moments["uplift_major_axis_kn_m"], -3.988471, places=6)
+
+    def test_advanced_analysis_returns_design_interaction_status(self):
+        inputs = ZPurlinASDInputs()
+        loads = z_purlin_resolved_loads(inputs)
+        moments = z_purlin_design_moments(inputs, loads)
+
+        advanced = z_purlin_advanced_analysis(inputs, moments)
+
+        self.assertGreater(advanced["zxx_effective_cm3"], 0.0)
+        self.assertGreater(advanced["zyy_effective_cm3"], 0.0)
+        self.assertAlmostEqual(advanced["allowable_stress_n_mm2"], 150.0)
+        self.assertIn("gravity_interaction_ok", advanced)
+        self.assertIn("uplift_interaction_ok", advanced)
 
 
 if __name__ == "__main__":

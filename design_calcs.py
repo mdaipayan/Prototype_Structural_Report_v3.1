@@ -61,6 +61,10 @@ class ZPurlinASDInputs:
     dead_load_kn_m2: float = 0.15
     live_load_kn_m2: float = 0.75
     wind_load_kn_m2: float = -1.50
+    normal_moment_denominator: float = 10.0
+    tangential_moment_denominator: float = 8.0
+    effective_section_factor: float = 1.0
+    ltb_reduction_factor: float = 1.0
 
 
 @dataclass
@@ -127,12 +131,85 @@ def z_purlin_design_moments(
 ) -> Dict[str, float]:
     """Return preliminary continuous-span major/minor-axis design moments in kN-m."""
     span_squared = inp.span_m**2
+    normal_denominator = max(inp.normal_moment_denominator, 1e-9)
+    tangential_denominator = max(inp.tangential_moment_denominator, 1e-9)
     return {
-        "gravity_major_axis_kn_m": loads["gravity_normal_kn_m"] * span_squared / 10.0,
+        "gravity_major_axis_kn_m": loads["gravity_normal_kn_m"]
+        * span_squared
+        / normal_denominator,
         "gravity_minor_axis_kn_m": loads["gravity_tangential_kn_m"]
         * span_squared
-        / 8.0,
-        "uplift_major_axis_kn_m": loads["uplift_normal_kn_m"] * span_squared / 10.0,
+        / tangential_denominator,
+        "uplift_major_axis_kn_m": loads["uplift_normal_kn_m"]
+        * span_squared
+        / normal_denominator,
+        "normal_moment_denominator": normal_denominator,
+        "tangential_moment_denominator": tangential_denominator,
+    }
+
+
+def kn_m_to_n_mm(moment_kn_m: float) -> float:
+    """Convert a moment from kN-m to N-mm."""
+    return moment_kn_m * 1_000_000.0
+
+
+def stress_from_kn_m(moment_kn_m: float, section_modulus_cm3: float) -> float:
+    """Return bending stress in N/mm² from a kN-m moment and cm³ section modulus."""
+    section_modulus_mm3 = max(section_modulus_cm3 * 1000.0, 1e-9)
+    return abs(kn_m_to_n_mm(moment_kn_m)) / section_modulus_mm3
+
+
+def z_purlin_advanced_analysis(
+    inp: ZPurlinASDInputs, moments: Dict[str, float]
+) -> Dict[str, Any]:
+    """Run preliminary gross/effective-property stress checks for the Z-purlin."""
+    sec = ZSectionInputs(
+        t_mm=inp.thickness_t_mm,
+        overall_depth_D_mm=inp.total_depth_h_mm,
+        b1_mm=inp.flange_width_b_mm,
+        b2_mm=inp.flange_width_b_mm,
+        lip1_mm=inp.lip_depth_d_mm,
+        lip2_mm=inp.lip_depth_d_mm,
+    )
+    props = z_section_properties(sec)
+    effective_factor = min(max(inp.effective_section_factor, 0.01), 1.0)
+    ltb_factor = min(max(inp.ltb_reduction_factor, 0.01), 1.0)
+    zxx_effective_cm3 = (
+        min(props["zxx_top_cm3"], props["zxx_bottom_cm3"]) * effective_factor
+    )
+    zyy_effective_cm3 = (
+        min(props["zyy_left_cm3"], props["zyy_right_cm3"]) * effective_factor
+    )
+    allowable_stress_n_mm2 = 0.6 * inp.fy_mpa * ltb_factor
+
+    gravity_major_stress = stress_from_kn_m(
+        moments["gravity_major_axis_kn_m"], zxx_effective_cm3
+    )
+    gravity_minor_stress = stress_from_kn_m(
+        moments["gravity_minor_axis_kn_m"], zyy_effective_cm3
+    )
+    uplift_major_stress = stress_from_kn_m(
+        moments["uplift_major_axis_kn_m"], zxx_effective_cm3
+    )
+    gravity_interaction = (gravity_major_stress + gravity_minor_stress) / max(
+        allowable_stress_n_mm2, 1e-9
+    )
+    uplift_interaction = uplift_major_stress / max(allowable_stress_n_mm2, 1e-9)
+
+    return {
+        **props,
+        "effective_section_factor": effective_factor,
+        "ltb_reduction_factor": ltb_factor,
+        "zxx_effective_cm3": zxx_effective_cm3,
+        "zyy_effective_cm3": zyy_effective_cm3,
+        "allowable_stress_n_mm2": allowable_stress_n_mm2,
+        "gravity_major_stress_n_mm2": gravity_major_stress,
+        "gravity_minor_stress_n_mm2": gravity_minor_stress,
+        "uplift_major_stress_n_mm2": uplift_major_stress,
+        "gravity_interaction_ratio": gravity_interaction,
+        "uplift_interaction_ratio": uplift_interaction,
+        "gravity_interaction_ok": gravity_interaction <= 1.0,
+        "uplift_interaction_ok": uplift_interaction <= 1.0,
     }
 
 

@@ -8,14 +8,13 @@ st.caption(
 )
 
 st.markdown("""
-### Z-purlin design workflow (IS 801:1975 ASD framework)
-1. Enter material strength, purlin span, purlin spacing and roof slope.
-2. Enter trial lipped Z-profile dimensions: total depth, flange width, lip depth and thickness.
-3. Enter service dead, live and wind uplift loads in kN/m².
-4. Check preliminary flat-width ratios for the web and flange edge stiffener limits.
-5. Resolve gravity and uplift loads into normal and tangential components on the roof slope.
-6. Estimate continuous-span major-axis and minor-axis moments for preliminary screening.
-7. Use the effective-width and stress-check framework as the next step before issuing calculations.
+### Integrated Z-purlin design + advanced analysis workflow (IS 801:1975 ASD framework)
+1. Complete one input form for material, framing, section dimensions, service loads and advanced analysis factors.
+2. Submit the form to run preliminary design checks and advanced gross/effective-property analysis on the same page.
+3. Check IS 801:1975 flat-width limits for the web and flange edge stiffener.
+4. Resolve IS 875 dead, imposed and wind loads into normal and tangential roof components.
+5. Estimate continuous-span major-axis and minor-axis moments for preliminary screening.
+6. Review effective-section, LTB/restraint and biaxial interaction checks with code-reference guidance.
 
 Use the left navigation to open the dedicated Purlin, Girt and Column pages.
 """)

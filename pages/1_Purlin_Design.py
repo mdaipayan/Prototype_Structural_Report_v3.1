@@ -5,327 +5,339 @@ with real-time validation and PDF report generation.
 """
 
 import streamlit as st
-from datetime import datetime
-from design_calcs import ZPurlinASDInputs, z_purlin_flat_width_checks, z_purlin_resolved_loads, z_purlin_design_moments
-from pdf_generator import create_design_report
+from design_calcs import (
+    ZPurlinASDInputs,
+    z_purlin_advanced_analysis,
+    z_purlin_design_moments,
+    z_purlin_flat_width_checks,
+    z_purlin_resolved_loads,
+)
 
+st.set_page_config(page_title="Z-Purlin Design IS 801:1975", layout="wide")
 
-st.set_page_config(page_title="Z-Purlin Design", layout="wide")
+st.title("Cold-Formed Z-Purlin Design + Advanced Analysis")
+st.markdown(
+    "Use the form below to enter the member, loading and analysis assumptions. "
+    "After submission, the page runs the preliminary IS 801:1975 ASD checks, "
+    "advanced gross/effective-property stress analysis and design summary on this single page."
+)
 
-st.title("🔧 Z-Purlin Design (IS 801:1975 ASD)")
-st.caption("Step-by-step preliminary design screening with PDF report generation")
+with st.form("z_purlin_design_form"):
+    st.subheader("Input Form")
+    material_col, section_col, load_col, advanced_col = st.columns(4)
 
-# Initialize session state
-if "inputs" not in st.session_state:
-    st.session_state.inputs = ZPurlinASDInputs()
-
-# Step 1: Material & Roof Parameters
-st.header("Step 1️⃣ Material Strength & Roof Parameters")
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    fy_mpa = st.number_input(
-        "Yield Strength (Fy) [MPa]",
-        min_value=200.0,
-        max_value=450.0,
-        value=st.session_state.inputs.fy_mpa,
-        step=10.0,
-    )
-
-with col2:
-    span_m = st.number_input(
-        "Purlin Span [m]",
-        min_value=1.0,
-        max_value=15.0,
-        value=st.session_state.inputs.span_m,
-        step=0.5,
-    )
-
-with col3:
-    spacing_m = st.number_input(
-        "Purlin Spacing [m]",
-        min_value=0.5,
-        max_value=3.0,
-        value=st.session_state.inputs.spacing_m,
-        step=0.1,
-    )
-
-with col4:
-    slope_deg = st.number_input(
-        "Roof Slope [degrees]",
-        min_value=0.0,
-        max_value=45.0,
-        value=st.session_state.inputs.slope_deg,
-        step=1.0,
-    )
-
-st.session_state.inputs.fy_mpa = fy_mpa
-st.session_state.inputs.span_m = span_m
-st.session_state.inputs.spacing_m = spacing_m
-st.session_state.inputs.slope_deg = slope_deg
-
-# Step 2: Z-Section Dimensions
-st.header("Step 2️⃣ Trial Z-Section Dimensions")
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    total_depth_h_mm = st.number_input(
-        "Total Depth (h) [mm]",
-        min_value=100.0,
-        max_value=400.0,
-        value=st.session_state.inputs.total_depth_h_mm,
-        step=10.0,
-    )
-
-with col2:
-    flange_width_b_mm = st.number_input(
-        "Flange Width (b) [mm]",
-        min_value=40.0,
-        max_value=120.0,
-        value=st.session_state.inputs.flange_width_b_mm,
-        step=5.0,
-    )
-
-with col3:
-    lip_depth_d_mm = st.number_input(
-        "Lip Depth (d) [mm]",
-        min_value=10.0,
-        max_value=40.0,
-        value=st.session_state.inputs.lip_depth_d_mm,
-        step=2.0,
-    )
-
-with col4:
-    thickness_t_mm = st.number_input(
-        "Thickness (t) [mm]",
-        min_value=1.2,
-        max_value=4.0,
-        value=st.session_state.inputs.thickness_t_mm,
-        step=0.2,
-    )
-
-st.session_state.inputs.total_depth_h_mm = total_depth_h_mm
-st.session_state.inputs.flange_width_b_mm = flange_width_b_mm
-st.session_state.inputs.lip_depth_d_mm = lip_depth_d_mm
-st.session_state.inputs.thickness_t_mm = thickness_t_mm
-
-# Step 3: Service Loads
-st.header("Step 3️⃣ Service Loads [kN/m²]")
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    dead_load_kn_m2 = st.number_input(
-        "Dead Load (DL) [kN/m²]",
-        min_value=0.0,
-        max_value=2.0,
-        value=st.session_state.inputs.dead_load_kn_m2,
-        step=0.05,
-        format="%.3f",
-    )
-
-with col2:
-    live_load_kn_m2 = st.number_input(
-        "Live Load (LL) [kN/m²]",
-        min_value=0.0,
-        max_value=2.0,
-        value=st.session_state.inputs.live_load_kn_m2,
-        step=0.05,
-        format="%.3f",
-    )
-
-with col3:
-    wind_load_kn_m2 = st.number_input(
-        "Wind Load (WL) [kN/m²] (negative for uplift)",
-        min_value=-3.0,
-        max_value=0.0,
-        value=st.session_state.inputs.wind_load_kn_m2,
-        step=0.05,
-        format="%.3f",
-    )
-
-st.session_state.inputs.dead_load_kn_m2 = dead_load_kn_m2
-st.session_state.inputs.live_load_kn_m2 = live_load_kn_m2
-st.session_state.inputs.wind_load_kn_m2 = wind_load_kn_m2
-
-# Step 4: Preliminary Checks
-st.header("Step 4️⃣ Preliminary Checks (IS 801:1975 Clause 5.2)")
-
-checks = z_purlin_flat_width_checks(st.session_state.inputs)
-
-col1, col2 = st.columns(2)
-
-with col1:
-    status = "✅ PASS" if checks["web_ratio_ok"] else "❌ FAIL"
-    st.metric(
-        "Web h/t Ratio",
-        f"{checks['web_ratio']:.1f}",
-        f"Limit: {checks['web_ratio_limit']:.0f}",
-    )
-    st.write(status)
-
-with col2:
-    status = "✅ PASS" if checks["flange_ratio_ok"] else "❌ FAIL"
-    st.metric(
-        "Flange b/t Ratio",
-        f"{checks['flange_ratio']:.1f}",
-        f"Limit: {checks['flange_ratio_limit']:.0f}",
-    )
-    st.write(status)
-
-# Step 5: Resolved Line Loads
-st.header("Step 5️⃣ Resolved Line Loads on Sloped Roof")
-
-resolved_loads = z_purlin_resolved_loads(st.session_state.inputs)
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("Gravity Loads (DL+LL)")
-    st.metric(
-        "Total Line Load",
-        f"{resolved_loads['gravity_line_load_kn_m']:.4f}",
-        "kN/m"
-    )
-    st.metric(
-        "Normal Component",
-        f"{resolved_loads['gravity_normal_kn_m']:.4f}",
-        "kN/m"
-    )
-    st.metric(
-        "Tangential Component",
-        f"{resolved_loads['gravity_tangential_kn_m']:.4f}",
-        "kN/m"
-    )
-
-with col2:
-    st.subheader("Uplift Loads (DL+WL)")
-    st.metric(
-        "Total Line Load",
-        f"{resolved_loads['uplift_line_load_kn_m']:.4f}",
-        "kN/m"
-    )
-    st.metric(
-        "Normal Component",
-        f"{resolved_loads['uplift_normal_kn_m']:.4f}",
-        "kN/m"
-    )
-    st.metric(
-        "Tangential Component",
-        f"{resolved_loads['uplift_tangential_kn_m']:.4f}",
-        "kN/m"
-    )
-
-# Step 6: Design Moments
-st.header("Step 6️⃣ Design Moments (Continuous Span)")
-
-design_moments = z_purlin_design_moments(st.session_state.inputs, resolved_loads)
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.subheader("Gravity Cases")
-    st.metric(
-        "Major Axis (Normal)",
-        f"{design_moments['gravity_major_axis_kn_m']:.4f}",
-        "kN-m"
-    )
-    st.metric(
-        "Minor Axis (Tangential)",
-        f"{design_moments['gravity_minor_axis_kn_m']:.4f}",
-        "kN-m"
-    )
-
-with col2:
-    st.subheader("Uplift Case")
-    st.metric(
-        "Major Axis (Normal)",
-        f"{design_moments['uplift_major_axis_kn_m']:.4f}",
-        "kN-m"
-    )
-
-with col3:
-    st.subheader("Design Formula")
-    st.write("**Normal:** WL²/10")
-    st.write("**Tangential:** WL²/8")
-    st.write("*(Continuous span)*")
-
-# Step 7: PDF Report Generation
-st.header("Step 7️⃣ Generate PDF Report")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    project_name = st.text_input("Project Name", value="Z-Purlin Design Project")
-
-with col2:
-    location = st.text_input("Project Location", value="India")
-
-with col3:
-    designer = st.text_input("Designer Name", value="Structural Engineer")
-
-if st.button("📥 Download PDF Report", use_container_width=True, type="primary"):
-    try:
-        # Prepare inputs dictionary
-        inputs_dict = {
-            'fy_mpa': st.session_state.inputs.fy_mpa,
-            'span_m': st.session_state.inputs.span_m,
-            'spacing_m': st.session_state.inputs.spacing_m,
-            'slope_deg': st.session_state.inputs.slope_deg,
-            'total_depth_h_mm': st.session_state.inputs.total_depth_h_mm,
-            'flange_width_b_mm': st.session_state.inputs.flange_width_b_mm,
-            'lip_depth_d_mm': st.session_state.inputs.lip_depth_d_mm,
-            'thickness_t_mm': st.session_state.inputs.thickness_t_mm,
-            'dead_load_kn_m2': st.session_state.inputs.dead_load_kn_m2,
-            'live_load_kn_m2': st.session_state.inputs.live_load_kn_m2,
-            'wind_load_kn_m2': st.session_state.inputs.wind_load_kn_m2,
-        }
-        
-        # Generate PDF
-        pdf_bytes = create_design_report(
-            inputs=inputs_dict,
-            flat_width_checks=checks,
-            resolved_loads=resolved_loads,
-            design_moments=design_moments,
-            project_name=project_name,
-            location=location,
-            designer=designer,
+    with material_col:
+        st.markdown("**1. Material & Framing**")
+        fy = st.number_input(
+            "Yield Strength, Fy (MPa)", min_value=1.0, value=250.0, step=10.0
         )
-        
-        # Create download button
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"Z_Purlin_Design_{timestamp}.pdf"
-        
-        st.download_button(
-            label="✅ Click to Download PDF",
-            data=pdf_bytes,
-            file_name=filename,
-            mime="application/pdf",
-            use_container_width=True,
+        span = st.number_input("Purlin Span, L (m)", min_value=0.1, value=5.0, step=0.1)
+        spacing = st.number_input(
+            "Purlin Spacing (m)", min_value=0.1, value=1.2, step=0.1
         )
-        st.success(f"✅ PDF generated successfully as: {filename}")
-        
-    except Exception as e:
-        st.error(f"❌ Error generating PDF: {str(e)}")
+        slope_deg = st.number_input("Roof Slope (degrees)", value=10.0, step=1.0)
 
-# Design Notes
-st.divider()
-st.info("""
-    ### 📋 Design Notes & Limitations
-    
-    **Included in this screening:**
-    - Flat-width ratio checks per IS 801:1975 Clause 5.2
-    - Load resolution on sloped roofs
-    - Preliminary moment calculations (continuous span)
-    
-    **NOT included (requires manual verification):**
-    - Effective-width reduction analysis
-    - Lateral-torsional buckling (LTB)
-    - Biaxial bending interaction
-    - Deflection checks
-    - Connection design
-    
-    **Always verify with:**
-    - Project-specific code requirements
-    - Manufacturer section properties
-    - Final stress and buckling checks before issuing calculations
+    with section_col:
+        st.markdown("**2. Trial Section**")
+        h = st.number_input(
+            "Total Depth, h (mm)", min_value=10.0, value=200.0, step=5.0
+        )
+        b = st.number_input("Flange Width, b (mm)", min_value=5.0, value=60.0, step=1.0)
+        d_lip = st.number_input(
+            "Lip Depth, d (mm)", min_value=0.0, value=20.0, step=1.0
+        )
+        t = st.number_input("Thickness, t (mm)", min_value=0.1, value=2.0, step=0.1)
+
+    with load_col:
+        st.markdown("**3. Service Loads (IS 875)**")
+        dl = st.number_input("Dead Load (kN/m²)", value=0.15, step=0.01)
+        ll = st.number_input("Live / Imposed Load (kN/m²)", value=0.75, step=0.05)
+        wl = st.number_input("Wind Load - Uplift (kN/m²)", value=-1.50, step=0.1)
+
+    with advanced_col:
+        st.markdown("**4. Advanced Analysis Controls**")
+        normal_denominator = st.number_input(
+            "Normal moment denominator", min_value=1.0, value=10.0, step=0.5
+        )
+        tangential_denominator = st.number_input(
+            "Tangential moment denominator", min_value=1.0, value=8.0, step=0.5
+        )
+        effective_factor = st.number_input(
+            "Effective section modulus factor",
+            min_value=0.01,
+            max_value=1.0,
+            value=1.0,
+            step=0.05,
+        )
+        ltb_factor = st.number_input(
+            "LTB / restraint reduction factor",
+            min_value=0.01,
+            max_value=1.0,
+            value=1.0,
+            step=0.05,
+        )
+
+    submitted = st.form_submit_button("Run analysis and design", type="primary")
+
+if not submitted:
+    st.info(
+        "Enter the purlin data in the form and click **Run analysis and design**. "
+        "Results are intentionally hidden until the form is submitted."
+    )
+    st.stop()
+
+validation_errors = []
+if h <= 2.0 * t:
+    validation_errors.append(
+        "Total depth h must be greater than 2t to leave a positive clear web depth."
+    )
+if b <= 2.0 * t:
+    validation_errors.append(
+        "Flange width b must be greater than 2t to leave a positive flat flange width."
+    )
+if d_lip and d_lip <= t:
+    validation_errors.append(
+        "Lip depth d should be greater than t for a lipped Z-profile trial section."
+    )
+
+if validation_errors:
+    for error in validation_errors:
+        st.error(error)
+    st.stop()
+
+inputs = ZPurlinASDInputs(
+    fy_mpa=fy,
+    span_m=span,
+    spacing_m=spacing,
+    slope_deg=slope_deg,
+    total_depth_h_mm=h,
+    flange_width_b_mm=b,
+    lip_depth_d_mm=d_lip,
+    thickness_t_mm=t,
+    dead_load_kn_m2=dl,
+    live_load_kn_m2=ll,
+    wind_load_kn_m2=wl,
+    normal_moment_denominator=normal_denominator,
+    tangential_moment_denominator=tangential_denominator,
+    effective_section_factor=effective_factor,
+    ltb_reduction_factor=ltb_factor,
+)
+checks = z_purlin_flat_width_checks(inputs)
+loads = z_purlin_resolved_loads(inputs)
+moments = z_purlin_design_moments(inputs, loads)
+advanced = z_purlin_advanced_analysis(inputs, moments)
+
+st.success("Analysis and preliminary design completed for the submitted inputs.")
+
+tab_summary, tab_analysis, tab_references = st.tabs(
+    ["Design Summary", "Advanced Analysis", "IS Code References"]
+)
+
+with tab_summary:
+    st.subheader("Step 1: Geometric Limits and Design Status")
+    geometry_df = pd.DataFrame(
+        [
+            {
+                "Check": "Web flat-width ratio",
+                "Code reference": "IS 801:1975 Clause 5.2",
+                "Demand": f"{checks['web_ratio']:.2f}",
+                "Limit": f"≤ {checks['web_ratio_limit']:.0f}",
+                "Status": "OK" if checks["web_ratio_ok"] else "NOT OK",
+            },
+            {
+                "Check": "Flange flat-width ratio with simple lip",
+                "Code reference": "IS 801:1975 Clause 5.2",
+                "Demand": f"{checks['flange_ratio']:.2f}",
+                "Limit": f"≤ {checks['flange_ratio_limit']:.0f}",
+                "Status": "OK" if checks["flange_ratio_ok"] else "NOT OK",
+            },
+            {
+                "Check": "Gravity biaxial bending interaction",
+                "Code reference": "IS 801:1975 Clause 6.7",
+                "Demand": f"{advanced['gravity_interaction_ratio']:.3f}",
+                "Limit": "≤ 1.000",
+                "Status": "OK" if advanced["gravity_interaction_ok"] else "NOT OK",
+            },
+            {
+                "Check": "Uplift major-axis bending interaction",
+                "Code reference": "IS 801:1975 Clauses 6.3 and 6.7",
+                "Demand": f"{advanced['uplift_interaction_ratio']:.3f}",
+                "Limit": "≤ 1.000",
+                "Status": "OK" if advanced["uplift_interaction_ok"] else "NOT OK",
+            },
+        ]
+    )
+    st.dataframe(geometry_df, width="stretch", hide_index=True)
+
+    all_ok = (
+        checks["web_ratio_ok"]
+        and checks["flange_ratio_ok"]
+        and advanced["gravity_interaction_ok"]
+        and advanced["uplift_interaction_ok"]
+    )
+    if all_ok:
+        st.success(
+            "Preliminary result: trial purlin is acceptable for the submitted assumptions."
+        )
+    else:
+        st.error(
+            "Preliminary result: revise the purlin size, thickness, restraint assumptions or effective-section factors."
+        )
+
+    st.subheader("Step 2: Load Resolution and Moments")
+    summary_col1, summary_col2 = st.columns(2)
+    with summary_col1:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Load case": "Gravity (DL + LL)",
+                        "IS loading reference": "IS 875 Part 1 + Part 2",
+                        "Normal Wn (kN/m)": loads["gravity_normal_kn_m"],
+                        "Tangential Wt (kN/m)": loads["gravity_tangential_kn_m"],
+                    },
+                    {
+                        "Load case": "Uplift (DL + WL)",
+                        "IS loading reference": "IS 875 Part 1 + Part 3",
+                        "Normal Wn (kN/m)": loads["uplift_normal_kn_m"],
+                        "Tangential Wt (kN/m)": loads["uplift_tangential_kn_m"],
+                    },
+                ]
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+    with summary_col2:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Moment": "Gravity Mx",
+                        "Formula": f"Wn L² / {moments['normal_moment_denominator']:.2f}",
+                        "Value (kN-m)": moments["gravity_major_axis_kn_m"],
+                    },
+                    {
+                        "Moment": "Gravity My",
+                        "Formula": f"Wt L² / {moments['tangential_moment_denominator']:.2f}",
+                        "Value (kN-m)": moments["gravity_minor_axis_kn_m"],
+                    },
+                    {
+                        "Moment": "Uplift Mx",
+                        "Formula": f"Wn L² / {moments['normal_moment_denominator']:.2f}",
+                        "Value (kN-m)": moments["uplift_major_axis_kn_m"],
+                    },
+                ]
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+
+with tab_analysis:
+    st.subheader("Advanced Analysis: Section Properties and Stress Checks")
+    st.caption(
+        "Gross section properties are reduced by the submitted effective-section factor. "
+        "Use project-approved effective widths before issuing calculations."
+    )
+
+    property_df = pd.DataFrame(
+        [
+            {"Property": "Area", "Value": advanced["area_cm2"], "Unit": "cm²"},
+            {"Property": "Weight", "Value": advanced["weight_kg_m"], "Unit": "kg/m"},
+            {"Property": "Ixx", "Value": advanced["ixx_cm4"], "Unit": "cm⁴"},
+            {"Property": "Iyy", "Value": advanced["iyy_cm4"], "Unit": "cm⁴"},
+            {
+                "Property": "Effective Zxx",
+                "Value": advanced["zxx_effective_cm3"],
+                "Unit": "cm³",
+            },
+            {
+                "Property": "Effective Zyy",
+                "Value": advanced["zyy_effective_cm3"],
+                "Unit": "cm³",
+            },
+        ]
+    )
+    st.dataframe(property_df, width="stretch", hide_index=True)
+
+    stress_df = pd.DataFrame(
+        [
+            {
+                "Case": "Gravity major-axis bending",
+                "Code reference": "IS 801:1975 Clause 6.3",
+                "Actual stress (N/mm²)": advanced["gravity_major_stress_n_mm2"],
+                "Allowable stress (N/mm²)": advanced["allowable_stress_n_mm2"],
+            },
+            {
+                "Case": "Gravity minor-axis bending",
+                "Code reference": "IS 801:1975 Clause 6.7",
+                "Actual stress (N/mm²)": advanced["gravity_minor_stress_n_mm2"],
+                "Allowable stress (N/mm²)": advanced["allowable_stress_n_mm2"],
+            },
+            {
+                "Case": "Uplift major-axis bending",
+                "Code reference": "IS 801:1975 Clause 6.3",
+                "Actual stress (N/mm²)": advanced["uplift_major_stress_n_mm2"],
+                "Allowable stress (N/mm²)": advanced["allowable_stress_n_mm2"],
+            },
+        ]
+    )
+    st.dataframe(stress_df, width="stretch", hide_index=True)
+
+    st.subheader("Effective Width Framework")
+    st.write(
+        "Use IS 801:1975 Clause 5.2.1 effective-width equations for compression elements."
+    )
+    st.latex(r"""
+\frac{b}{t} = \frac{2120}{\sqrt{f}} \left[ 1 - \frac{465}{(w/t)\sqrt{f}} \right]
 """)
+
+with tab_references:
+    st.subheader("Code References Used by This Preliminary Workflow")
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Design item": "Cold-formed element flat-width ratios",
+                    "Code reference": "IS 801:1975 Clause 5.2",
+                    "How used here": "Flags web and flange width-to-thickness ratios before stress checks.",
+                },
+                {
+                    "Design item": "Effective width of compression elements",
+                    "Code reference": "IS 801:1975 Clause 5.2.1",
+                    "How used here": "Shown as the advanced design framework; user-entered factor reduces section modulus.",
+                },
+                {
+                    "Design item": "Bending stress / lateral restraint review",
+                    "Code reference": "IS 801:1975 Clause 6.3",
+                    "How used here": "Applies the submitted LTB/restraint factor to the ASD bending stress limit.",
+                },
+                {
+                    "Design item": "Combined biaxial bending interaction",
+                    "Code reference": "IS 801:1975 Clause 6.7",
+                    "How used here": "Checks gravity major-plus-minor bending interaction against unity.",
+                },
+                {
+                    "Design item": "Dead load input",
+                    "Code reference": "IS 875 Part 1",
+                    "How used here": "User enters project dead load intensity in kN/m².",
+                },
+                {
+                    "Design item": "Live / imposed load input",
+                    "Code reference": "IS 875 Part 2",
+                    "How used here": "User enters project imposed roof load intensity in kN/m².",
+                },
+                {
+                    "Design item": "Wind uplift input",
+                    "Code reference": "IS 875 Part 3",
+                    "How used here": "User enters project wind uplift pressure in kN/m².",
+                },
+            ]
+        ),
+        width="stretch",
+        hide_index=True,
+    )
+    st.warning(
+        "Clause references are provided to guide preliminary checking. Confirm the governing edition, "
+        "project load combinations, coefficients, effective widths, local buckling, LTB, deflection, "
+        "connections and client criteria before issuing design calculations."
+    )

@@ -1,23 +1,23 @@
 # Cold-Formed Purlin / Girt / Column Design Streamlit App
 
 This Streamlit app provides preliminary cold-formed steel member design workflows.
-The Purlin page has been rebuilt around an IS 801:1975 Allowable Stress Design
-(ASD) screening workflow for lipped Z-purlins, while the Girt page retains the
-workbook-derived calculation scaffold.
+The Purlin page integrates input collection, preliminary design and advanced
+gross/effective-property analysis in a single IS 801:1975 Allowable Stress Design
+(ASD) workflow for lipped Z-purlins, while the Girt page retains the workbook-derived
+calculation scaffold.
 
 ## Purlin design workflow
 
-1. Input material strength, purlin span, purlin spacing and roof slope.
-2. Input the trial lipped Z-profile dimensions: total depth, flange width, lip depth and thickness.
-3. Input service dead, live and wind uplift loads in kN/m².
-4. Check simplified IS 801:1975 Clause 5.2 flat-width ratios:
+1. Complete one form for material, span, spacing, slope, trial section, service loads and advanced analysis factors.
+2. Submit the form to run design and advanced analysis together on one page.
+3. Check simplified IS 801:1975 Clause 5.2 flat-width ratios:
    - Web flat-width ratio limit: `h/t ≤ 150`
    - Flange flat-width ratio limit for simple lips: `w/t ≤ 60`
-5. Resolve gravity `(DL + LL)` and uplift `(DL + WL)` service loads into normal and tangential components on the roof slope.
-6. Estimate preliminary continuous-span bending moments:
+4. Resolve gravity `(DL + LL)` and uplift `(DL + WL)` service loads into normal and tangential components on the roof slope.
+5. Estimate preliminary continuous-span bending moments:
    - Normal loading: `WL² / 10`
    - Tangential loading: `WL² / 8`
-7. Use the included effective-width framework as the next step before final stress, lateral-torsional buckling and biaxial interaction checks.
+6. Review gross/effective section properties, LTB/restraint factors and biaxial interaction checks with IS 801:1975 Clause 5.2.1, 6.3 and 6.7 references.
 
 ## Girt design workflow
 
