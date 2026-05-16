@@ -159,10 +159,10 @@ def stress_from_kn_m(moment_kn_m: float, section_modulus_cm3: float) -> float:
     return abs(kn_m_to_n_mm(moment_kn_m)) / section_modulus_mm3
 
 
-def z_purlin_advanced_analysis(
+def z_purlin_design_analysis(
     inp: ZPurlinASDInputs, moments: Dict[str, float]
 ) -> Dict[str, Any]:
-    """Run preliminary gross/effective-property stress checks for the Z-purlin."""
+    """Run preliminary gross/effective-property design checks for the Z-purlin."""
     sec = ZSectionInputs(
         t_mm=inp.thickness_t_mm,
         overall_depth_D_mm=inp.total_depth_h_mm,

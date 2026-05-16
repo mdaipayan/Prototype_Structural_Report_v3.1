@@ -1,15 +1,15 @@
 # Cold-Formed Purlin / Girt / Column Design Streamlit App
 
 This Streamlit app provides preliminary cold-formed steel member design workflows.
-The Purlin page integrates input collection, preliminary design and advanced
-gross/effective-property analysis in a single IS 801:1975 Allowable Stress Design
+The Purlin page integrates input collection, preliminary design and
+gross/effective-property checks in a single IS 801:1975 Allowable Stress Design
 (ASD) workflow for lipped Z-purlins, while the Girt page retains the workbook-derived
 calculation scaffold.
 
 ## Purlin design workflow
 
-1. Complete one form for material, span, spacing, slope, trial section, service loads and advanced analysis factors.
-2. Submit the form to run design and advanced analysis together on one page.
+1. Complete one form for material, span, spacing, slope, trial section, service loads and design provision factors.
+2. Submit the form to run analysis and design checks together on one page.
 3. Check simplified IS 801:1975 Clause 5.2 flat-width ratios:
    - Web flat-width ratio limit: `h/t ≤ 150`
    - Flange flat-width ratio limit for simple lips: `w/t ≤ 60`

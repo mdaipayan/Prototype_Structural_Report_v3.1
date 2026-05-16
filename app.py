@@ -8,9 +8,9 @@ st.caption(
 )
 
 st.markdown("""
-### Integrated Z-purlin design + advanced analysis workflow (IS 801:1975 ASD framework)
-1. Complete one input form for material, framing, section dimensions, service loads and advanced analysis factors.
-2. Submit the form to run preliminary design checks and advanced gross/effective-property analysis on the same page.
+### Integrated Z-purlin design workflow (IS 801:1975 ASD framework)
+1. Complete one input form for material, framing, section dimensions, service loads and design provision factors.
+2. Submit the form to run preliminary design checks and gross/effective-property design checks on the same page.
 3. Check IS 801:1975 flat-width limits for the web and flange edge stiffener.
 4. Resolve IS 875 dead, imposed and wind loads into normal and tangential roof components.
 5. Estimate continuous-span major-axis and minor-axis moments for preliminary screening.
