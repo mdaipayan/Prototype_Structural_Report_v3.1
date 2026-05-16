@@ -356,11 +356,11 @@ def deflection_calculation(
     Returns:
         Maximum deflection in mm
     """
-    # Convert units
-    load_n_m = load_kn_m * 1000
+    # Convert units. 1 kN/m equals 1 N/mm, so do not multiply by 1000.
+    load_n_per_mm = load_kn_m
     span_mm = span_m * 1000
     e_n_mm2 = modulus_e_mpa
-    i_mm4 = moment_of_inertia_cm4 * 100
+    i_mm4 = moment_of_inertia_cm4 * 10000
     
     # Deflection coefficients (w*L⁴ / (C * E * I))
     coefficients = {
@@ -374,7 +374,7 @@ def deflection_calculation(
     if i_mm4 <= 0:
         return float('inf')
     
-    deflection_mm = (coeff * load_n_m * (span_mm ** 4)) / (e_n_mm2 * i_mm4)
+    deflection_mm = (coeff * load_n_per_mm * (span_mm ** 4)) / (e_n_mm2 * i_mm4)
     
     return deflection_mm
 
@@ -507,12 +507,14 @@ def bearing_capacity_purlin(
     # Total for all bolts
     total_bearing_capacity_kn = capacity_per_bolt_kn * connection.number_of_bolts
     
+    bolt_capacity = bolt_shear_capacity(connection)
+
     return {
         'tensile_strength_purlin_mpa': fu_purlin_mpa,
         'bearing_stress_limit_mpa': bearing_stress_mpa,
         'capacity_per_bolt_kn': capacity_per_bolt_kn,
         'total_bearing_capacity_kn': total_bearing_capacity_kn,
-        'governer': 'Bolt' if total_bearing_capacity_kn > (sum(bolt_shear_capacity(connection).values()) / 2) else 'Bearing',
+        'governing_mode': 'Bolt shear' if bolt_capacity['total_capacity_bearing_kn'] < total_bearing_capacity_kn else 'Bearing',
     }
 
 

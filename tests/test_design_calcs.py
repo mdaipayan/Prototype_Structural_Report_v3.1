@@ -79,5 +79,45 @@ class ZPurlinASDWorkflowTest(unittest.TestCase):
         self.assertIn("uplift_interaction_ok", design)
 
 
+class AdvancedChecksTest(unittest.TestCase):
+    def test_deflection_calculation_uses_consistent_kn_m_and_cm4_units(self):
+        from advanced_checks import deflection_calculation
+
+        # Simply supported beam: delta = 5wL^4/(384EI). 1 kN/m = 1 N/mm,
+        # and 100 cm^4 = 1,000,000 mm^4, giving about 39.698 mm.
+        self.assertAlmostEqual(
+            deflection_calculation(
+                load_kn_m=1.0,
+                span_m=5.0,
+                moment_of_inertia_cm4=100.0,
+                support_condition="simply_supported",
+            ),
+            39.698,
+            places=3,
+        )
+
+
+class StreamlitPageStructureTest(unittest.TestCase):
+    def test_purlin_girt_and_column_pages_are_registered(self):
+        from pathlib import Path
+
+        page_names = sorted(path.name for path in Path("pages").glob("*.py"))
+
+        self.assertEqual(
+            page_names,
+            ["1_Purlin_Design.py", "2_Girt_Design.py", "3_Column_Design.py"],
+        )
+
+    def test_purlin_page_runs_after_form_submit(self):
+        from streamlit.testing.v1 import AppTest
+
+        app = AppTest.from_file("pages/1_Purlin_Design.py")
+        app.run(timeout=10)
+        self.assertEqual(len(app.exception), 0)
+
+        app.button[0].click().run(timeout=10)
+        self.assertEqual(len(app.exception), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
