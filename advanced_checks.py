@@ -507,12 +507,14 @@ def bearing_capacity_purlin(
     # Total for all bolts
     total_bearing_capacity_kn = capacity_per_bolt_kn * connection.number_of_bolts
     
+    bolt_capacity = bolt_shear_capacity(connection)
+
     return {
         'tensile_strength_purlin_mpa': fu_purlin_mpa,
         'bearing_stress_limit_mpa': bearing_stress_mpa,
         'capacity_per_bolt_kn': capacity_per_bolt_kn,
         'total_bearing_capacity_kn': total_bearing_capacity_kn,
-        'governer': 'Bolt' if total_bearing_capacity_kn > (sum(bolt_shear_capacity(connection).values()) / 2) else 'Bearing',
+        'governing_mode': 'Bolt shear' if bolt_capacity['total_capacity_bearing_kn'] < total_bearing_capacity_kn else 'Bearing',
     }
 
 
