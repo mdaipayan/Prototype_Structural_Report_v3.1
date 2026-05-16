@@ -41,12 +41,22 @@ st.set_page_config(page_title="Complete Z-Purlin Design", layout="wide")
 
 st.title("Complete Cold-Formed Z-Purlin Design")
 st.caption(
+<<<<<<< HEAD
     "Step-by-step preliminary design with IS 801:1975, IS 875 and connection-reference notes."
 )
 
 st.info(
     "Use this page as a guided calculation scaffold. Enter project-specific values, run the design, "
     "then review each numbered step from geometry through final references."
+=======
+    "One guided workflow for preliminary IS 801:1975 ASD checks, advanced serviceability checks, "
+    "and connection screening. Girt, column and separate advanced pages are intentionally removed for now."
+)
+
+st.info(
+    "Use this page as a user-friendly calculation scaffold. Enter project-specific values, run the design, "
+    "then review the status cards and detailed tabs from left to right."
+>>>>>>> main
 )
 
 with st.form("z_purlin_design_form"):
@@ -245,64 +255,100 @@ metric_4.metric("Connection utilization", f"{connection_result['utilization_rati
 summary_df = pd.DataFrame(
     [
         {
+<<<<<<< HEAD
             "Design step": "Step 1 - Web flat-width ratio",
             "Code reference": "IS 801:1975 Clause 5.2",
+=======
+            "Design area": "Web flat-width ratio",
+>>>>>>> main
             "Demand": f"{checks['web_ratio']:.2f}",
             "Limit / capacity": f"≤ {checks['web_ratio_limit']:.0f}",
             "Status": status_label(checks["web_ratio_ok"]),
         },
         {
+<<<<<<< HEAD
             "Design step": "Step 1 - Flange flat-width ratio",
             "Code reference": "IS 801:1975 Clause 5.2",
+=======
+            "Design area": "Flange flat-width ratio",
+>>>>>>> main
             "Demand": f"{checks['flange_ratio']:.2f}",
             "Limit / capacity": f"≤ {checks['flange_ratio_limit']:.0f}",
             "Status": status_label(checks["flange_ratio_ok"]),
         },
         {
+<<<<<<< HEAD
             "Design step": "Step 4 - Gravity bending interaction",
             "Code reference": "IS 801:1975 Clauses 6.3 and 6.7",
+=======
+            "Design area": "Base gravity bending interaction",
+>>>>>>> main
             "Demand": f"{design['gravity_interaction_ratio']:.3f}",
             "Limit / capacity": "≤ 1.000",
             "Status": status_label(design["gravity_interaction_ok"]),
         },
         {
+<<<<<<< HEAD
             "Design step": "Step 4 - Uplift bending interaction",
             "Code reference": "IS 801:1975 Clauses 6.3 and 6.7",
+=======
+            "Design area": "Base uplift bending interaction",
+>>>>>>> main
             "Demand": f"{design['uplift_interaction_ratio']:.3f}",
             "Limit / capacity": "≤ 1.000",
             "Status": status_label(design["uplift_interaction_ok"]),
         },
         {
+<<<<<<< HEAD
             "Design step": "Step 5 - Lateral-torsional buckling",
             "Code reference": "IS 801:1975 bending restraint guidance",
+=======
+            "Design area": "Lateral-torsional buckling",
+>>>>>>> main
             "Demand": f"{ltb_result['utilization_ratio']:.1%}",
             "Limit / capacity": "≤ 100%",
             "Status": status_label(ltb_result["is_safe"]),
         },
         {
+<<<<<<< HEAD
             "Design step": "Step 5 - Biaxial bending interaction",
             "Code reference": "IS 801:1975 Clause 6.7",
+=======
+            "Design area": "Biaxial bending interaction",
+>>>>>>> main
             "Demand": f"{interaction['interaction_ratio']:.3f}",
             "Limit / capacity": "≤ 1.000",
             "Status": status_label(interaction["is_safe"]),
         },
         {
+<<<<<<< HEAD
             "Design step": "Step 6 - Live-load deflection",
             "Code reference": "Project serviceability criteria / IS 875 load case",
+=======
+            "Design area": "Live-load deflection",
+>>>>>>> main
             "Demand": f"{live_deflection['actual_deflection_mm']:.2f} mm",
             "Limit / capacity": f"≤ {live_deflection['limit_deflection_mm']:.2f} mm",
             "Status": status_label(live_deflection["is_safe"]),
         },
         {
+<<<<<<< HEAD
             "Design step": "Step 6 - Wind-load deflection",
             "Code reference": "Project serviceability criteria / IS 875 wind load",
+=======
+            "Design area": "Wind-load deflection",
+>>>>>>> main
             "Demand": f"{wind_deflection['actual_deflection_mm']:.2f} mm",
             "Limit / capacity": f"≤ {wind_deflection['limit_deflection_mm']:.2f} mm",
             "Status": status_label(wind_deflection["is_safe"]),
         },
         {
+<<<<<<< HEAD
             "Design step": "Step 7 - Support connection shear",
             "Code reference": "IS 1367 / IS 800 connection guidance",
+=======
+            "Design area": "Support connection shear",
+>>>>>>> main
             "Demand": f"{connection_result['design_shear_kn']:.2f} kN",
             "Limit / capacity": f"{connection_result['governing_capacity_kn']:.2f} kN",
             "Status": status_label(connection_result["is_safe"]),
@@ -313,21 +359,37 @@ st.dataframe(summary_df, width="stretch", hide_index=True)
 
 summary_tab, loads_tab, section_tab, advanced_tab, references_tab = st.tabs(
     [
+<<<<<<< HEAD
         "Step 1 - Geometry",
         "Steps 2-3 - Loads & moments",
         "Step 4 - Section & stress",
         "Steps 5-7 - Advanced checks",
         "Step 8 - Code notes",
+=======
+        "Summary guidance",
+        "Loads & moments",
+        "Section & stress",
+        "Advanced checks",
+        "Code notes",
+>>>>>>> main
     ]
 )
 
 with summary_tab:
+<<<<<<< HEAD
     st.subheader("Step 1: Geometry and flat-width checks")
+=======
+    st.subheader("How to read this result")
+>>>>>>> main
     st.markdown(
         """
         - **PASS** means the trial input is within the simplified screening limit shown in this app.
         - **REVIEW** means the section, thickness, load, restraint, connection or project criteria should be revised.
+<<<<<<< HEAD
         - The flat-width checks are shown first because IS 801:1975 Clause 5.2 element proportioning affects the later stress checks.
+=======
+        - This page intentionally keeps every current Z-purlin check in one place; there are no separate girt, column or advanced design pages.
+>>>>>>> main
         """
     )
     st.dataframe(
@@ -345,8 +407,12 @@ with summary_tab:
     )
 
 with loads_tab:
+<<<<<<< HEAD
     st.subheader("Step 2: Resolve IS 875 service loads")
     st.caption("Dead, live/imposed and wind inputs are entered as service pressures and converted to purlin line loads.")
+=======
+    st.subheader("Resolved service loads")
+>>>>>>> main
     st.dataframe(
         pd.DataFrame(
             [
@@ -362,7 +428,11 @@ with loads_tab:
         hide_index=True,
     )
 
+<<<<<<< HEAD
     st.subheader("Step 3: Calculate preliminary design moments")
+=======
+    st.subheader("Design moments")
+>>>>>>> main
     st.dataframe(
         pd.DataFrame(
             [
@@ -376,8 +446,12 @@ with loads_tab:
     )
 
 with section_tab:
+<<<<<<< HEAD
     st.subheader("Step 4: Section properties and ASD stress checks")
     st.caption("Gross properties are reduced by user-entered effective-section and restraint factors for preliminary screening.")
+=======
+    st.subheader("Section properties")
+>>>>>>> main
     st.dataframe(
         pd.DataFrame(
             [
@@ -407,7 +481,11 @@ with section_tab:
     )
 
 with advanced_tab:
+<<<<<<< HEAD
     st.subheader("Step 5: Effective-width and LTB screening")
+=======
+    st.subheader("Effective-width reduction")
+>>>>>>> main
     st.dataframe(
         pd.DataFrame(
             [
@@ -447,7 +525,11 @@ with advanced_tab:
             "Biaxial interaction exceeds the screening limit and needs review.",
         )
 
+<<<<<<< HEAD
     st.subheader("Step 6: Deflection checks")
+=======
+    st.subheader("Deflection checks")
+>>>>>>> main
     st.dataframe(
         pd.DataFrame(
             [
@@ -471,7 +553,11 @@ with advanced_tab:
         hide_index=True,
     )
 
+<<<<<<< HEAD
     st.subheader("Step 7: Support connection screening")
+=======
+    st.subheader("Connection screening")
+>>>>>>> main
     st.dataframe(
         pd.DataFrame(
             [
@@ -488,7 +574,11 @@ with advanced_tab:
     )
 
 with references_tab:
+<<<<<<< HEAD
     st.subheader("Step 8: Code-reference notes")
+=======
+    st.subheader("Code-reference notes")
+>>>>>>> main
     st.dataframe(
         pd.DataFrame(
             [

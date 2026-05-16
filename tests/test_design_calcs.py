@@ -98,11 +98,16 @@ class AdvancedChecksTest(unittest.TestCase):
 
 
 class StreamlitPageStructureTest(unittest.TestCase):
+<<<<<<< HEAD
     def test_purlin_girt_and_column_pages_are_registered(self):
+=======
+    def test_only_purlin_design_page_is_registered(self):
+>>>>>>> main
         from pathlib import Path
 
         page_names = sorted(path.name for path in Path("pages").glob("*.py"))
 
+<<<<<<< HEAD
         self.assertEqual(
             page_names,
             ["1_Purlin_Design.py", "2_Girt_Design.py", "3_Column_Design.py"],
@@ -117,6 +122,9 @@ class StreamlitPageStructureTest(unittest.TestCase):
 
         app.button[0].click().run(timeout=10)
         self.assertEqual(len(app.exception), 0)
+=======
+        self.assertEqual(page_names, ["1_Purlin_Design.py"])
+>>>>>>> main
 
 
 if __name__ == "__main__":
