@@ -1,10 +1,12 @@
-"""Streamlit Z-Purlin Design Page
+"""Streamlit Z-Purlin Design Page.
 
-Interactive step-by-step Z-purlin design following IS 801:1975 ASD framework
-with real-time validation and PDF report generation.
+Interactive step-by-step Z-purlin design following the IS 801:1975 ASD
+framework with real-time validation and report-ready summary tables.
 """
 
+import pandas as pd
 import streamlit as st
+
 from design_calcs import (
     ZPurlinASDInputs,
     z_purlin_design_analysis,
@@ -12,174 +14,6 @@ from design_calcs import (
     z_purlin_flat_width_checks,
     z_purlin_resolved_loads,
 )
-checks = z_purlin_flat_width_checks(inputs)
-loads = z_purlin_resolved_loads(inputs)
-moments = z_purlin_design_moments(inputs, loads)
-advanced = z_purlin_advanced_analysis(inputs, moments)
-
-st.success("Analysis and preliminary design completed for the submitted inputs.")
-
-tab_summary, tab_analysis, tab_references = st.tabs(
-    ["Design Summary", "Advanced Analysis", "IS Code References"]
-)
-
-with tab_summary:
-    st.subheader("Step 1: Geometric Limits and Design Status")
-    geometry_df = pd.DataFrame(
-        [
-            {
-                "Check": "Web flat-width ratio",
-                "Code reference": "IS 801:1975 Clause 5.2",
-                "Demand": f"{checks['web_ratio']:.2f}",
-                "Limit": f"≤ {checks['web_ratio_limit']:.0f}",
-                "Status": "OK" if checks["web_ratio_ok"] else "NOT OK",
-            },
-            {
-                "Check": "Flange flat-width ratio with simple lip",
-                "Code reference": "IS 801:1975 Clause 5.2",
-                "Demand": f"{checks['flange_ratio']:.2f}",
-                "Limit": f"≤ {checks['flange_ratio_limit']:.0f}",
-                "Status": "OK" if checks["flange_ratio_ok"] else "NOT OK",
-            },
-            {
-                "Check": "Gravity biaxial bending interaction",
-                "Code reference": "IS 801:1975 Clause 6.7",
-                "Demand": f"{advanced['gravity_interaction_ratio']:.3f}",
-                "Limit": "≤ 1.000",
-                "Status": "OK" if advanced["gravity_interaction_ok"] else "NOT OK",
-            },
-            {
-                "Check": "Uplift major-axis bending interaction",
-                "Code reference": "IS 801:1975 Clauses 6.3 and 6.7",
-                "Demand": f"{advanced['uplift_interaction_ratio']:.3f}",
-                "Limit": "≤ 1.000",
-                "Status": "OK" if advanced["uplift_interaction_ok"] else "NOT OK",
-            },
-        ]
-    )
-    st.dataframe(geometry_df, width="stretch", hide_index=True)
-
-    all_ok = (
-        checks["web_ratio_ok"]
-        and checks["flange_ratio_ok"]
-        and advanced["gravity_interaction_ok"]
-        and advanced["uplift_interaction_ok"]
-    )
-    if all_ok:
-        st.success(
-            "Preliminary result: trial purlin is acceptable for the submitted assumptions."
-        )
-    else:
-        st.error(
-            "Preliminary result: revise the purlin size, thickness, restraint assumptions or effective-section factors."
-        )
-
-    st.subheader("Step 2: Load Resolution and Moments")
-    summary_col1, summary_col2 = st.columns(2)
-    with summary_col1:
-        st.dataframe(
-            pd.DataFrame(
-                [
-                    {
-                        "Load case": "Gravity (DL + LL)",
-                        "IS loading reference": "IS 875 Part 1 + Part 2",
-                        "Normal Wn (kN/m)": loads["gravity_normal_kn_m"],
-                        "Tangential Wt (kN/m)": loads["gravity_tangential_kn_m"],
-                    },
-                    {
-                        "Load case": "Uplift (DL + WL)",
-                        "IS loading reference": "IS 875 Part 1 + Part 3",
-                        "Normal Wn (kN/m)": loads["uplift_normal_kn_m"],
-                        "Tangential Wt (kN/m)": loads["uplift_tangential_kn_m"],
-                    },
-                ]
-            ),
-            width="stretch",
-            hide_index=True,
-        )
-    with summary_col2:
-        st.dataframe(
-            pd.DataFrame(
-                [
-                    {
-                        "Moment": "Gravity Mx",
-                        "Formula": f"Wn L² / {moments['normal_moment_denominator']:.2f}",
-                        "Value (kN-m)": moments["gravity_major_axis_kn_m"],
-                    },
-                    {
-                        "Moment": "Gravity My",
-                        "Formula": f"Wt L² / {moments['tangential_moment_denominator']:.2f}",
-                        "Value (kN-m)": moments["gravity_minor_axis_kn_m"],
-                    },
-                    {
-                        "Moment": "Uplift Mx",
-                        "Formula": f"Wn L² / {moments['normal_moment_denominator']:.2f}",
-                        "Value (kN-m)": moments["uplift_major_axis_kn_m"],
-                    },
-                ]
-            ),
-            width="stretch",
-            hide_index=True,
-        )
-
-with tab_analysis:
-    st.subheader("Advanced Analysis: Section Properties and Stress Checks")
-    st.caption(
-        "Gross section properties are reduced by the submitted effective-section factor. "
-        "Use project-approved effective widths before issuing calculations."
-    )
-
-    property_df = pd.DataFrame(
-        [
-            {"Property": "Area", "Value": advanced["area_cm2"], "Unit": "cm²"},
-            {"Property": "Weight", "Value": advanced["weight_kg_m"], "Unit": "kg/m"},
-            {"Property": "Ixx", "Value": advanced["ixx_cm4"], "Unit": "cm⁴"},
-            {"Property": "Iyy", "Value": advanced["iyy_cm4"], "Unit": "cm⁴"},
-            {
-                "Property": "Effective Zxx",
-                "Value": advanced["zxx_effective_cm3"],
-                "Unit": "cm³",
-            },
-            {
-                "Property": "Effective Zyy",
-                "Value": advanced["zyy_effective_cm3"],
-                "Unit": "cm³",
-            },
-        ]
-    )
-    st.dataframe(property_df, width="stretch", hide_index=True)
-
-    stress_df = pd.DataFrame(
-        [
-            {
-                "Case": "Gravity major-axis bending",
-                "Code reference": "IS 801:1975 Clause 6.3",
-                "Actual stress (N/mm²)": advanced["gravity_major_stress_n_mm2"],
-                "Allowable stress (N/mm²)": advanced["allowable_stress_n_mm2"],
-            },
-            {
-                "Case": "Gravity minor-axis bending",
-                "Code reference": "IS 801:1975 Clause 6.7",
-                "Actual stress (N/mm²)": advanced["gravity_minor_stress_n_mm2"],
-                "Allowable stress (N/mm²)": advanced["allowable_stress_n_mm2"],
-            },
-            {
-                "Case": "Uplift major-axis bending",
-                "Code reference": "IS 801:1975 Clause 6.3",
-                "Actual stress (N/mm²)": advanced["uplift_major_stress_n_mm2"],
-                "Allowable stress (N/mm²)": advanced["allowable_stress_n_mm2"],
-            },
-        ]
-    )
-    st.dataframe(stress_df, width="stretch", hide_index=True)
-
-    st.subheader("Effective Width Framework")
-    st.write(
-        "Use IS 801:1975 Clause 5.2.1 effective-width equations for compression elements."
-    )
-    st.latex(r"""
-\frac{b}{t} = \frac{2120}{\sqrt{f}} \left[ 1 - \frac{465}{(w/t)\sqrt{f}} \right]
-""")
 
 st.set_page_config(page_title="Z-Purlin Design IS 801:1975", layout="wide")
 
